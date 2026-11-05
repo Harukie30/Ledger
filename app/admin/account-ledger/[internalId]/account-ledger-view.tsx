@@ -38,6 +38,10 @@ const COMPACT_TABLE_WIDTH = 1024
 
 const loanLedgerColumns = [
   "Installment No.",
+  "Date of purchase",
+  "Location",
+  "Item class",
+  "Rebate",
   "Due date",
   "Payment date",
   "Payment reference",
@@ -45,7 +49,7 @@ const loanLedgerColumns = [
   "Monthly principal",
   "Monthly interest",
   "Penalty",
-  "Rebate",
+  "Rebate applied",
   "Monthly installment paid",
   "Monthly principal paid",
   "Monthly interest paid",
@@ -99,7 +103,6 @@ function loanSummary(customer: LedgerCustomer) {
   return [
     [
       ["Customer name", customer.customerName],
-      ["Customer ID", customer.customerId],
       ["Loan start date", customer.loanStartLabel],
       ["Term (months)", customer.termMonths],
       ["Monthly principal", peso.format(principal)],
@@ -330,6 +333,11 @@ type LedgerLine = {
   payment_ref?: unknown
   penalty?: unknown
   rebate?: unknown
+  rebate_amount?: unknown
+  purchase_date?: unknown
+  date_of_purchase?: unknown
+  location?: unknown
+  item_class?: unknown
   monthly_installment_paid?: unknown
   monthly_principal_paid?: unknown
   monthly_interest_paid?: unknown
@@ -348,8 +356,13 @@ function readAccount(payload: unknown) {
   const account = record.installment ?? record.account
   if (!account) return null
 
-  const purchaseRaw = textOf(account.purchase_date) || textOf(account.loan_start_date)
+  const purchaseRaw =
+    textOf(account.purchase_date) ||
+    textOf(account.date_of_purchase) ||
+    textOf(account.loan_start_date)
   const locationName = locationOf(account.location)
+  const itemClass = textOf(account.item_class) || textOf(account.item)
+  const rebateAmount = textOf(account.rebate_amount)
   const customer: LedgerCustomer = {
     internalId: textOf(account.internal_id),
     customerName: textOf(account.customer_name),
@@ -357,7 +370,7 @@ function readAccount(payload: unknown) {
     purchaseDate: formatDate(purchaseRaw),
     salesOrderNo: textOf(account.so_number) || textOf(account.sales_order_no),
     location: locationName,
-    itemUnit: textOf(account.item),
+    itemUnit: itemClass || textOf(account.item),
     loanStartDate: purchaseRaw.slice(0, 10),
     loanStartLabel: formatDate(purchaseRaw),
     loanAmount:
@@ -366,7 +379,7 @@ function readAccount(payload: unknown) {
       textOf(account.financed_amount),
     downPayment: textOf(account.downpayment) || textOf(account.down_payment),
     termMonths: textOf(account.term),
-    rebateAmount: textOf(account.rebate_amount),
+    rebateAmount,
     financedAmount: textOf(account.financed_amount),
     monthlyInterest: textOf(account.monthly_interest),
     monthlyInstallment: textOf(account.monthly_installment),
@@ -392,7 +405,18 @@ function readAccount(payload: unknown) {
   const monthlyInstallment = textOf(account.monthly_installment)
   const monthlyPrincipal = textOf(account.monthly_principal)
   const monthlyInterest = textOf(account.monthly_interest)
-  const rebated = Number(account.rebate_amount) > 0 || account.is_rebated ? "Yes" : "No"
+  const rebated =
+    Number(rebateAmount) > 0 ||
+    account.is_rebated === true ||
+    account.is_rebated === 1 ||
+    textOf(account.is_rebated).toLowerCase() === "yes"
+      ? "Yes"
+      : "No"
+  const purchaseLabel = formatDate(purchaseRaw) || "—"
+  const rebateLabel =
+    rebateAmount !== "" && Number.isFinite(Number(rebateAmount))
+      ? money(rebateAmount)
+      : rebated
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
@@ -400,8 +424,19 @@ function readAccount(payload: unknown) {
     const breakdown = paid
       ? `Principal ${money(line.monthly_principal_paid)} · Interest ${money(line.monthly_interest_paid)} · Penalty ${money(line.penalty_paid)}`
       : ""
+    const lineLocation = locationOf(line.location) || locationName
+    const lineItemClass = textOf(line.item_class) || itemClass
+    const linePurchase =
+      formatDate(textOf(line.purchase_date) || textOf(line.date_of_purchase)) ||
+      purchaseLabel
+    const lineRebate =
+      textOf(line.rebate_amount) !== "" ? money(line.rebate_amount) : rebateLabel
     return [
       textOf(line.installment_number),
+      linePurchase,
+      lineLocation || "—",
+      lineItemClass || "—",
+      lineRebate,
       formatDate(textOf(line.due_date)),
       formatDate(textOf(line.payment_date)),
       textOf(line.payment_ref),

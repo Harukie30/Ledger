@@ -38,6 +38,7 @@ export const installmentColumns = [
   "Down Payment",
   "Financed amount",
   "Loan amount",
+  "Location",
   "Item class",
   "Rebate amount",
 ]
