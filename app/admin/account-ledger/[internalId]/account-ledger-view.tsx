@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import { useParams } from "next/navigation"
 import { Search } from "lucide-react"
 
-import { BranchInfoForm } from "@/components/branch-info-form"
 import { CustomerSetupForm } from "@/components/customer-setup-form"
 import { type LedgerCustomer } from "@/components/ledger-customers"
 import { apiService, toApiErrorMessage } from "@/lib/apiService"
@@ -76,7 +75,6 @@ const paymentHistoryColumns = [
 
 const tabs = [
   "Customer set-up",
-  "Branch info",
   "Loan Ledger",
   "Payment history",
 ] as const
@@ -668,8 +666,6 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
           </div>
         ) : tab === "Customer set-up" ? (
           <CustomerSetupForm customer={selected} />
-        ) : tab === "Branch info" ? (
-          <BranchInfoForm customer={selected} />
         ) : tab === "Loan Ledger" ? (
           <LedgerPanel
             title="Per customer loan ledger"
