@@ -271,7 +271,7 @@ function MobileLayoutWarning() {
         <X className="size-4" />
       </Button>
     </div>
-  )
+  ) 
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {

@@ -46,16 +46,27 @@ export function CustomerSetupForm({
               id="sales-order-no"
               value={customer.salesOrderNo}
             />
-            <TextField label="Item / unit" id="item-unit" value={customer.itemUnit} />
-            <Field label="Loan start date" htmlFor="loan-start-date">
+            <Field label="Date of purchase" htmlFor="date-of-purchase">
               <Input
-                id="loan-start-date"
+                id="date-of-purchase"
                 type="date"
                 readOnly
                 value={customer.loanStartDate}
                 className="h-9 bg-white text-blue-950"
               />
             </Field>
+            <TextField label="Location" id="location" value={customer.location} />
+            <TextField
+              label="Item class"
+              id="item-class"
+              value={customer.itemClass || customer.itemUnit}
+            />
+            <TextField label="Item / unit" id="item-unit" value={customer.itemUnit} />
+            <MoneyField
+              label="Rebate"
+              id="rebate-amount"
+              value={customer.rebateAmount}
+            />
           </Section>
           <Section title="Amounts">
             <MoneyField label="Loan amount" id="loan-amount" value={customer.loanAmount} />
@@ -73,11 +84,6 @@ export function CustomerSetupForm({
                 className="h-9 bg-white text-blue-950 tabular-nums"
               />
             </Field>
-            <MoneyField
-              label="Rebate amount"
-              id="rebate-amount"
-              value={customer.rebateAmount}
-            />
             <MoneyField
               label="Financed amount"
               id="financed-amount"

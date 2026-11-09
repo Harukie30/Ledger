@@ -144,6 +144,17 @@ export const apiService = {
     return response.data;
   },
 
+  updateAccount: async (
+    account: string | number,
+    payload: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const response = await api.put(
+      `/installments/${encodeURIComponent(String(account))}`,
+      payload,
+    );
+    return response.data;
+  },
+
 // ADMIN ACTIVITY LOGS API :
   // Initial list: GET /logs. Live rows: Echo private channel (see lib/echo.ts).
   getActivityLogs: async (

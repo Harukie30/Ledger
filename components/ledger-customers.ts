@@ -5,6 +5,7 @@ export type LedgerCustomer = {
   purchaseDate: string
   salesOrderNo: string
   location: string
+  itemClass: string
   itemUnit: string
   loanStartDate: string
   loanStartLabel: string
@@ -30,6 +31,28 @@ export type LedgerCustomer = {
   notes: string
 }
 
+/** Body for PUT /installments/:id from customer set-up fields. */
+export function installmentAccountPayload(customer: LedgerCustomer) {
+  return {
+    internal_id: customer.internalId,
+    customer_name: customer.customerName,
+    customer_id: customer.customerId,
+    date_of_purchase: customer.loanStartDate || null,
+    purchase_date: customer.loanStartDate || null,
+    sales_order_no: customer.salesOrderNo,
+    location: customer.location,
+    item_class: customer.itemClass,
+    item: customer.itemUnit,
+    loan_amount: customer.loanAmount,
+    down_payment: customer.downPayment,
+    term: customer.termMonths,
+    rebate_amount: customer.rebateAmount,
+    financed_amount: customer.financedAmount,
+    monthly_interest: customer.monthlyInterest,
+    monthly_installment: customer.monthlyInstallment,
+  }
+}
+
 export const ledgerCustomers: LedgerCustomer[] = [
   {
     internalId: "ACC-1002",
@@ -38,6 +61,7 @@ export const ledgerCustomers: LedgerCustomer[] = [
     purchaseDate: "Apr 3, 2026",
     salesOrderNo: "SO-0001",
     location: "Bohol",
+    itemClass: "Motorcycle",
     itemUnit: "Smash 115",
     loanStartDate: "2026-04-03",
     loanStartLabel: "Apr 3, 2026",
@@ -69,6 +93,7 @@ export const ledgerCustomers: LedgerCustomer[] = [
     purchaseDate: "Oct 14, 2026",
     salesOrderNo: "SO-24081",
     location: "Cebu",
+    itemClass: "Motorcycle",
     itemUnit: "Honda Click 125",
     loanStartDate: "2026-10-14",
     loanStartLabel: "Oct 14, 2026",
@@ -104,6 +129,7 @@ export function matchesCustomer(customer: LedgerCustomer, query: string) {
     customer.customerId,
     customer.salesOrderNo,
     customer.location,
+    customer.itemClass,
     customer.itemUnit,
   ].some((value) => value.toLowerCase().includes(text))
 }

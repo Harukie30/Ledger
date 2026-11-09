@@ -37,10 +37,6 @@ const COMPACT_TABLE_WIDTH = 1024
 
 const loanLedgerColumns = [
   "Installment No.",
-  "Date of purchase",
-  "Location",
-  "Item class",
-  "Rebate",
   "Due date",
   "Payment date",
   "Payment reference",
@@ -48,7 +44,7 @@ const loanLedgerColumns = [
   "Monthly principal",
   "Monthly interest",
   "Penalty",
-  "Rebate applied",
+  "Rebate",
   "Monthly installment paid",
   "Monthly principal paid",
   "Monthly interest paid",
@@ -98,10 +94,17 @@ function loanSummary(customer: LedgerCustomer) {
     Number(customer.termMonths) > 0
       ? Number(customer.financedAmount) / Number(customer.termMonths)
       : 0
+  const rebate =
+    customer.rebateAmount !== "" && Number.isFinite(Number(customer.rebateAmount))
+      ? peso.format(Number(customer.rebateAmount))
+      : customer.rebateAmount
   return [
     [
       ["Customer name", customer.customerName],
-      ["Loan start date", customer.loanStartLabel],
+      ["Date of purchase", customer.loanStartLabel || customer.purchaseDate],
+      ["Location", customer.location],
+      ["Item class", customer.itemClass || customer.itemUnit],
+      ["Rebate", rebate],
       ["Term (months)", customer.termMonths],
       ["Monthly principal", peso.format(principal)],
       ["Notes", customer.notes],
@@ -138,10 +141,13 @@ function LoanLedgerSummary({
         <h2 className="text-sm font-semibold tracking-tight sm:text-base">{customer.customerName}</h2>
       </div>
       <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-5 sm:py-5 md:grid-cols-2 lg:grid-cols-3">
-        {loanSummary(customer).map((column) => (
-          <dl key={column[0][0]} className="flex min-w-0 flex-col gap-3">
-            {column.map(([label, value]) => (
-              <div key={label} className="flex min-w-0 flex-col gap-1">
+        {loanSummary(customer).map((column, columnIndex) => (
+          <dl key={`loan-summary-${columnIndex}`} className="flex min-w-0 flex-col gap-3">
+            {column.map(([label, value], fieldIndex) => (
+              <div
+                key={`loan-summary-${columnIndex}-${fieldIndex}-${label}`}
+                className="flex min-w-0 flex-col gap-1"
+              >
                 <dt className="text-xs font-medium text-blue-800">{label}</dt>
                 <dd className="text-sm break-words text-blue-950">{value || "—"}</dd>
               </div>
@@ -186,13 +192,13 @@ function RecordTable({
             </TableRow>
           ) : (
             rows.map((row, index) => (
-              <TableRow key={`${row[0]}-${index}`}>
-                {row.map((cell, cellIndex) => (
+              <TableRow key={`ledger-row-${index}`}>
+                {columns.map((column, cellIndex) => (
                   <TableCell
-                    key={`${columns[cellIndex]}-${index}`}
+                    key={`ledger-cell-${index}-${cellIndex}-${column}`}
                     className="px-3 text-xs whitespace-nowrap sm:px-4 sm:text-sm"
                   >
-                    {cell || "—"}
+                    {row[cellIndex] || "—"}
                   </TableCell>
                 ))}
               </TableRow>
@@ -359,7 +365,8 @@ function readAccount(payload: unknown) {
     textOf(account.date_of_purchase) ||
     textOf(account.loan_start_date)
   const locationName = locationOf(account.location)
-  const itemClass = textOf(account.item_class) || textOf(account.item)
+  const itemClass = textOf(account.item_class)
+  const itemUnit = textOf(account.item) || itemClass
   const rebateAmount = textOf(account.rebate_amount)
   const customer: LedgerCustomer = {
     internalId: textOf(account.internal_id),
@@ -368,7 +375,8 @@ function readAccount(payload: unknown) {
     purchaseDate: formatDate(purchaseRaw),
     salesOrderNo: textOf(account.so_number) || textOf(account.sales_order_no),
     location: locationName,
-    itemUnit: itemClass || textOf(account.item),
+    itemClass,
+    itemUnit,
     loanStartDate: purchaseRaw.slice(0, 10),
     loanStartLabel: formatDate(purchaseRaw),
     loanAmount:
@@ -410,11 +418,6 @@ function readAccount(payload: unknown) {
     textOf(account.is_rebated).toLowerCase() === "yes"
       ? "Yes"
       : "No"
-  const purchaseLabel = formatDate(purchaseRaw) || "—"
-  const rebateLabel =
-    rebateAmount !== "" && Number.isFinite(Number(rebateAmount))
-      ? money(rebateAmount)
-      : rebated
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
@@ -422,19 +425,8 @@ function readAccount(payload: unknown) {
     const breakdown = paid
       ? `Principal ${money(line.monthly_principal_paid)} · Interest ${money(line.monthly_interest_paid)} · Penalty ${money(line.penalty_paid)}`
       : ""
-    const lineLocation = locationOf(line.location) || locationName
-    const lineItemClass = textOf(line.item_class) || itemClass
-    const linePurchase =
-      formatDate(textOf(line.purchase_date) || textOf(line.date_of_purchase)) ||
-      purchaseLabel
-    const lineRebate =
-      textOf(line.rebate_amount) !== "" ? money(line.rebate_amount) : rebateLabel
     return [
       textOf(line.installment_number),
-      linePurchase,
-      lineLocation || "—",
-      lineItemClass || "—",
-      lineRebate,
       formatDate(textOf(line.due_date)),
       formatDate(textOf(line.payment_date)),
       textOf(line.payment_ref),
@@ -724,7 +716,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
               <TableBody>
                 {matches.map((customer) => (
                     <TableRow
-                      key={customer.id}
+                      key={customer.id || `match-${customer.internalId}`}
                       className="cursor-pointer"
                       onClick={() => {
                         skipSearch.current = true
