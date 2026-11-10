@@ -255,6 +255,8 @@ export const apiService = {
   uploadPayments: async (rows: UploadRow[], fileName?: string): Promise<unknown> => {
     return postRows("/payments", rows, "Payments uploaded", fileName);
   },
+
+ getLedger: (id: string | number) => api.get(`/ledger/${id}`).then((res) => res.data),
 };
 
 export default apiService;
