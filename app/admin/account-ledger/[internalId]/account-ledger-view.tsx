@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useParams } from "next/navigation"
-import { Search } from "lucide-react"
+import { BookOpen, Receipt, Search, UserRound, type LucideIcon } from "lucide-react"
 
 import { CustomerSetupForm } from "@/components/customer-setup-form"
 import { type LedgerCustomer } from "@/components/ledger-customers"
@@ -18,11 +18,6 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { Input } from "@/components/ui/input"
-import {
-  Menubar,
-  MenubarMenu,
-  MenubarTrigger,
-} from "@/components/ui/menubar"
 import {
   Table,
   TableBody,
@@ -77,6 +72,21 @@ const tabs = [
 
 type AccountLedgerTab = (typeof tabs)[number]
 
+const tabMeta: Record<AccountLedgerTab, { icon: LucideIcon; hint: string }> = {
+  "Customer set-up": {
+    icon: UserRound,
+    hint: "Customer and purchase details",
+  },
+  "Loan Ledger": {
+    icon: BookOpen,
+    hint: "Installment schedule and balances",
+  },
+  "Payment history": {
+    icon: Receipt,
+    hint: "Posted collections for this account",
+  },
+}
+
 function tabLoadingVariant(tab: AccountLedgerTab): "table" | "fields" | "summary" {
   if (tab === "Loan Ledger") return "summary"
   if (tab === "Payment history") return "table"
@@ -100,25 +110,27 @@ function loanSummary(customer: LedgerCustomer) {
       : customer.rebateAmount
   return [
     [
-      ["Customer name", customer.customerName],
       ["Date of purchase", customer.loanStartLabel || customer.purchaseDate],
       ["Location", customer.location],
       ["Item class", customer.itemClass || customer.itemUnit],
+      ["Item / unit", customer.itemUnit],
+      ["Sales order no.", customer.salesOrderNo],
+    ],
+    [
       ["Rebate", rebate],
       ["Term (months)", customer.termMonths],
+      ["Original loan amount", peso.format(Number(customer.loanAmount))],
+      ["Down payment", peso.format(Number(customer.downPayment))],
+      ["Financed amount", peso.format(Number(customer.financedAmount))],
+    ],
+    [
       ["Monthly principal", peso.format(principal)],
+      ["Monthly interest", peso.format(Number(customer.monthlyInterest))],
+      ["Monthly installment", peso.format(principal + Number(customer.monthlyInterest))],
+      ["Loan status", customer.loanStatus],
       ["Notes", customer.notes],
     ],
     [
-      ["Sales order no.", customer.salesOrderNo],
-      ["Item / unit", customer.itemUnit],
-      ["Original loan amount", peso.format(Number(customer.loanAmount))],
-      ["Down payment", peso.format(Number(customer.downPayment))],
-      ["Monthly interest", peso.format(Number(customer.monthlyInterest))],
-      ["Monthly installment", peso.format(principal + Number(customer.monthlyInterest))],
-    ],
-    [
-      ["Loan status", customer.loanStatus],
       ["Current balance", peso.format(customer.currentBalance)],
       ["Total payments", peso.format(customer.totalPayments)],
       ["Total amount due", peso.format(customer.totalAmountDue)],
@@ -140,7 +152,7 @@ function LoanLedgerSummary({
       <div className="bg-blue-800 px-4 py-2 text-white sm:px-5 sm:py-4">
         <h2 className="text-sm font-semibold tracking-tight sm:text-base">{customer.customerName}</h2>
       </div>
-      <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-5 sm:py-5 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-5 sm:py-5 md:grid-cols-2 xl:grid-cols-4">
         {loanSummary(customer).map((column, columnIndex) => (
           <dl key={`loan-summary-${columnIndex}`} className="flex min-w-0 flex-col gap-3">
             {column.map(([label, value], fieldIndex) => (
@@ -618,31 +630,34 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   return (
     <section className="flex h-[calc(100svh-11.5rem)] min-h-0 flex-col gap-4 sm:h-[calc(100svh-12.5rem)]">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <Menubar
-          aria-label="Account Ledger"
-          className="h-8 w-full flex-nowrap gap-0.5 overflow-x-auto rounded-lg border-blue-200 bg-blue-50/70 p-[3px] shadow-none sm:w-auto"
+        <div
+          role="tablist"
+          aria-label="Account ledger sections"
+          className="flex h-8 w-full flex-nowrap gap-0.5 overflow-x-auto rounded-lg border border-blue-200 bg-blue-50/70 p-[3px] sm:w-auto"
         >
           {tabs.map((item) => {
             const selected = tab === item
+            const Icon = tabMeta[item].icon
             return (
-              <MenubarMenu key={item}>
-                <MenubarTrigger
-                  className={
-                    selected
-                      ? "cursor-pointer rounded-md bg-blue-800 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-800 focus:bg-blue-800 data-open:bg-blue-800"
-                      : "cursor-pointer rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white focus:bg-white data-open:bg-white"
-                  }
-                  onClick={(event) => {
-                    event.preventDefault()
-                    selectTab(item)
-                  }}
-                >
-                  {item}
-                </MenubarTrigger>
-              </MenubarMenu>
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                title={tabMeta[item].hint}
+                className={
+                  selected
+                    ? "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-blue-800 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-white"
+                    : "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white"
+                }
+                onClick={() => selectTab(item)}
+              >
+                <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                <span>{item}</span>
+              </button>
             )
           })}
-        </Menubar>
+        </div>
         {searchable ? (
           <div className="relative w-full max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
