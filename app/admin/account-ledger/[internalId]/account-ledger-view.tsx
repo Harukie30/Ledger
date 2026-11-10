@@ -351,6 +351,20 @@ type LedgerLine = {
   balance_w_penalty?: unknown
 }
 
+/** One payment from the compute endpoint (payments table + calculator result). */
+type PaymentLine = {
+  payment_date?: unknown
+  or_number?: unknown
+  amount?: unknown
+  penalty_paid?: unknown
+  applied_to_monthly_due?: unknown
+  unapplied_excess?: unknown
+  received_by?: unknown
+  remarks?: unknown
+  status?: unknown
+  isrebatable?: unknown
+}
+
 function readAccount(payload: unknown) {
   if (!payload || typeof payload !== "object") return null
   const record = payload as {
@@ -445,22 +459,20 @@ function readAccount(payload: unknown) {
       breakdown,
     ]
   })
-  const payments = lines.flatMap((line) => {
-    if (!textOf(line.payment_date)) return []
-    return [[
-      formatDate(textOf(line.payment_date)),
-      textOf(line.payment_ref),
-      money(line.monthly_installment_paid),
-      money(line.penalty_paid),
-      money(line.monthly_installment_paid),
-      money(0),
-      "",
-      locationName,
-      "",
-      "Posted",
-      rebated,
-    ]]
-  })
+  const paymentLines = Array.isArray(account.payments) ? (account.payments as PaymentLine[]) : []
+  const payments = paymentLines.map((payment) => [
+    formatDate(textOf(payment.payment_date)),
+    textOf(payment.or_number),
+    money(payment.amount),
+    money(payment.penalty_paid),
+    money(payment.applied_to_monthly_due),
+    money(payment.unapplied_excess),
+    textOf(payment.received_by),
+    locationName,
+    textOf(payment.remarks),
+    textOf(payment.status),
+    payment.isrebatable === true || payment.isrebatable === 1 ? "Yes" : "No",
+  ])
   return { id: textOf(account.id), customer, ledgerRows, payments }
 }
 
@@ -536,7 +548,8 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
       setLoading(true)
       setError("")
       try {
-        const data = await apiService.getAccount(accountKey)
+        // Computed ledger (LedgerController@show): GET /api/ledger/{installment id}
+        const data = await apiService.getLedger(accountKey)
         const next = readAccount(data)
         if (!cancelled) {
           if (!next) {
