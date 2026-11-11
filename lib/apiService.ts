@@ -250,7 +250,7 @@ export const apiService = {
     payment: string | number,
     reason: string,
   ): Promise<unknown> => {
-    const response = await api.post(
+    const response = await api.patch(
       `/payments/${encodeURIComponent(String(payment))}/void`,
       { reason: reason.trim() },
     );
