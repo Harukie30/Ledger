@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import { BookOpen, Receipt, Search, UserRound, type LucideIcon } from "lucide-react"
 
@@ -11,6 +11,14 @@ import { LoadingState } from "@/components/loading-state"
 import { TableEmpty } from "@/components/table-empty"
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -18,6 +26,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer"
 import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Table,
   TableBody,
@@ -177,7 +186,7 @@ function RecordTable({
   empty,
 }: {
   columns: readonly string[]
-  rows: string[][]
+  rows: ReactNode[][]
   empty: string
 }) {
   return (
@@ -232,7 +241,7 @@ function LedgerPanel({
   title: string
   customer: LedgerCustomer
   columns: readonly string[]
-  rows: string[][]
+  rows: ReactNode[][]
   empty: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -361,6 +370,36 @@ type LedgerLine = {
   overdue?: unknown
   balance_wo_penalty?: unknown
   balance_w_penalty?: unknown
+  // Details for the Payment breakdown tooltip (from the compute endpoint)
+  monthly_installment?: unknown
+  penalty_accrued?: unknown
+  unpaid?: unknown
+  months_late_today?: unknown
+  extra_months?: unknown
+  extra_penalty?: unknown
+  penalty_per_month?: unknown
+  payment_breakdown?: unknown
+}
+
+/** One payment applied to one installment, with the numbers used to compute it. */
+type BreakdownLine = {
+  date?: unknown
+  or_no?: unknown
+  applied?: unknown
+  principal?: unknown
+  interest?: unknown
+  penalty?: unknown
+  rebate?: unknown
+  unpaid_before?: unknown
+  months_late?: unknown
+  new_months?: unknown
+  penalty_per_month?: unknown
+  new_penalty?: unknown
+  unpaid_after?: unknown
+  payment_amount?: unknown
+  cash_available?: unknown
+  carried_from?: unknown
+  cash_after?: unknown
 }
 
 /** One payment from the compute endpoint (payments table + calculator result). */
@@ -375,6 +414,139 @@ type PaymentLine = {
   remarks?: unknown
   status?: unknown
   isrebatable?: unknown
+}
+
+function BreakdownRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-blue-200">{label}</span>
+      <span className="text-right font-medium text-white">{children}</span>
+    </div>
+  )
+}
+
+/**
+ * Detailed calculation for one installment. For every payment that entered it:
+ * amount paid -> (excess carried from the previous due) -> cash to apply -> penalty -> monthly -> unpaid / excess.
+ */
+function BreakdownDetails({ line }: { line: LedgerLine }) {
+  const breakdown = Array.isArray(line.payment_breakdown) ? (line.payment_breakdown as BreakdownLine[]) : []
+  const extraMonths = Number(line.extra_months) || 0
+  const accrued = Number(line.penalty_accrued) || 0
+  const totalPenaltyPaid = breakdown.reduce((sum, item) => sum + (Number(item.penalty) || 0), 0)
+  const totalInterest = breakdown.reduce((sum, item) => sum + (Number(item.interest) || 0), 0)
+  const totalPrincipal = breakdown.reduce((sum, item) => sum + (Number(item.principal) || 0), 0)
+
+  return (
+    <div className="flex flex-col gap-3 text-xs leading-snug">
+      <p className="font-semibold text-white">
+        Installment #{textOf(line.installment_number)} · due {formatDate(textOf(line.due_date))} ·{" "}
+        {money(line.monthly_installment)}
+      </p>
+
+      {breakdown.length === 0 ? (
+        <p className="text-blue-100">No payment has been applied to this installment yet.</p>
+      ) : (
+        breakdown.map((item, index) => {
+          const newMonths = Number(item.new_months) || 0
+          const carriedFrom = Number(item.carried_from) || 0
+          const available = Number(item.cash_available) || 0
+          const penaltyPaid = Number(item.penalty) || 0
+          const interest = Number(item.interest) || 0
+          const principal = Number(item.principal) || 0
+          const rebate = Number(item.rebate) || 0
+          const excess = Number(item.cash_after) || 0
+          return (
+            <div key={index} className="flex flex-col gap-1 rounded-md bg-white/10 p-2">
+              <p className="font-semibold text-white">
+                Payment {index + 1}
+                {breakdown.length > 1 ? ` of ${breakdown.length}` : ""} · {formatDate(textOf(item.date))}
+                {textOf(item.or_no) ? ` · ${textOf(item.or_no)}` : ""}
+              </p>
+
+              {carriedFrom > 0 ? (
+                <BreakdownRow label={`Excess left after installment #${carriedFrom}`}>{money(available)}</BreakdownRow>
+              ) : null}
+              <BreakdownRow label="Cash to apply here">{money(available)}</BreakdownRow>
+
+              <div className="mt-1 text-blue-100">
+                Unpaid before: {money(item.unpaid_before)} · months late at payment date: {textOf(item.months_late) || "0"}
+              </div>
+              <div className="text-blue-100">
+                {newMonths > 0
+                  ? `New penalty: 4% of ${money(item.unpaid_before)} = ${money(item.penalty_per_month)}/month × ${newMonths} new month${newMonths > 1 ? "s" : ""} = ${money(item.new_penalty)}`
+                  : "No new penalty (late months were already penalized)."}
+              </div>
+
+              <BreakdownRow label="1) Penalty paid first">{money(penaltyPaid)}</BreakdownRow>
+              <div className="text-blue-100">Cash left after penalty: {money(available - penaltyPaid)}</div>
+              <BreakdownRow label="2) Monthly paid">{money(interest + principal)}</BreakdownRow>
+              <div className="text-blue-100">
+                Interest {money(interest)} first, then principal {money(principal)}
+                {rebate > 0 ? ` · includes rebate credit ${money(rebate)}` : ""}
+              </div>
+
+              <BreakdownRow label="Unpaid after this payment">{money(item.unpaid_after)}</BreakdownRow>
+              {excess > 0 ? (
+                <BreakdownRow label="Excess moves to the next due">{money(excess)}</BreakdownRow>
+              ) : null}
+            </div>
+          )
+        })
+      )}
+
+      <div className="flex flex-col gap-1 border-t border-white/20 pt-2">
+        {breakdown.length > 1 ? (
+          <div className="text-blue-100">
+            All payments in this due: penalty {money(totalPenaltyPaid)} + interest {money(totalInterest)} + principal{" "}
+            {money(totalPrincipal)}
+          </div>
+        ) : null}
+        <BreakdownRow label="Penalty from payments">{money(accrued)}</BreakdownRow>
+        {extraMonths > 0 ? (
+          <div className="text-blue-100">
+            + {extraMonths} more month{extraMonths > 1 ? "s" : ""} × {money(line.penalty_per_month)} (4% of the unpaid{" "}
+            {money(line.unpaid)}) until today = {money(line.extra_penalty)}
+          </div>
+        ) : null}
+        <BreakdownRow label="Total penalty">{money(line.penalty)}</BreakdownRow>
+        <BreakdownRow label="Penalty paid">{money(line.penalty_paid)}</BreakdownRow>
+        <BreakdownRow label="Overdue">{money(line.overdue)}</BreakdownRow>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Payment breakdown cell. Click opens a modal with the detailed calculation.
+ * Modal content scrolls independently, so long breakdowns remain readable on any screen.
+ */
+function PaymentBreakdown({ line, summary }: { line: LedgerLine; summary: string }) {
+  const count = Array.isArray(line.payment_breakdown) ? line.payment_breakdown.length : 0
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-blue-700"
+          aria-label="Show payment breakdown details"
+        >
+          {summary}
+          {count > 1 ? ` · ${count} payments` : ""}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+        </DialogHeader>
+        <ScrollArea className="max-h-[65vh] pr-3">
+          <div className="rounded-lg bg-blue-950 p-3">
+            <BreakdownDetails line={line} />
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function readAccount(payload: unknown) {
@@ -448,9 +620,13 @@ function readAccount(payload: unknown) {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
     )
-    const breakdown = paid
+    const summary = paid
       ? `Principal ${money(line.monthly_principal_paid)} · Interest ${money(line.monthly_interest_paid)} · Penalty ${money(line.penalty_paid)}`
-      : ""
+      : Number(line.penalty) > 0
+        ? ""
+        : ""
+    // Tooltip with the detailed calculation (also for rows that only have a running penalty)
+    const breakdown: ReactNode = summary ? <PaymentBreakdown line={line} summary={summary} /> : ""
     return [
       textOf(line.installment_number),
       formatDate(textOf(line.due_date)),
@@ -533,7 +709,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [searchLoading, setSearchLoading] = useState(false)
   const [matches, setMatches] = useState<AccountMatch[]>([])
   const [selected, setSelected] = useState<LedgerCustomer | null>(null)
-  const [ledgerRows, setLedgerRows] = useState<string[][]>([])
+  const [ledgerRows, setLedgerRows] = useState<ReactNode[][]>([])
   const [payments, setPayments] = useState<string[][]>([])
   const [accountKey, setAccountKey] = useState(routeId)
   const [loading, setLoading] = useState(Boolean(routeId))
