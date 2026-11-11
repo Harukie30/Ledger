@@ -470,11 +470,11 @@ function BreakdownDetails({ line }: { line: LedgerLine }) {
               <BreakdownRow label="Cash to apply here">{money(available)}</BreakdownRow>
 
               <div className="mt-1 text-blue-100">
-                Unpaid before: {money(item.unpaid_before)} · months late at payment date: {textOf(item.months_late) || "0"}
+                Unpaid before: {money(item.unpaid_before)} 
               </div>
               <div className="text-blue-100">
                 {newMonths > 0
-                  ? `New penalty: 4% of ${money(item.unpaid_before)} = ${money(item.penalty_per_month)}/month × ${newMonths} new month${newMonths > 1 ? "s" : ""} = ${money(item.new_penalty)}`
+                  ? `Penalty: 4% of ${money(item.unpaid_before)} = ${money(item.penalty_per_month)}/month × ${newMonths} month${newMonths > 1 ? "s" : ""} = ${money(item.new_penalty)}`
                   : "No new penalty (late months were already penalized)."}
               </div>
 
@@ -496,19 +496,6 @@ function BreakdownDetails({ line }: { line: LedgerLine }) {
       )}
 
       <div className="flex flex-col gap-1 border-t border-white/20 pt-2">
-        {breakdown.length > 1 ? (
-          <div className="text-blue-100">
-            All payments in this due: penalty {money(totalPenaltyPaid)} + interest {money(totalInterest)} + principal{" "}
-            {money(totalPrincipal)}
-          </div>
-        ) : null}
-        <BreakdownRow label="Penalty from payments">{money(accrued)}</BreakdownRow>
-        {extraMonths > 0 ? (
-          <div className="text-blue-100">
-            + {extraMonths} more month{extraMonths > 1 ? "s" : ""} × {money(line.penalty_per_month)} (4% of the unpaid{" "}
-            {money(line.unpaid)}) until today = {money(line.extra_penalty)}
-          </div>
-        ) : null}
         <BreakdownRow label="Total penalty">{money(line.penalty)}</BreakdownRow>
         <BreakdownRow label="Penalty paid">{money(line.penalty_paid)}</BreakdownRow>
         <BreakdownRow label="Overdue">{money(line.overdue)}</BreakdownRow>
