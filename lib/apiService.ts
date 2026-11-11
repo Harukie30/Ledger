@@ -208,6 +208,16 @@ export const apiService = {
     return response.data;
   },
 
+  getLocationSelections: async (): Promise<unknown> => {
+    const response = await api.get("/locations/selections");
+    return response.data;
+  },
+
+  getSalesOrderSelections: async (): Promise<unknown> => {
+    const response = await api.get("/SOs/selections");
+    return response.data;
+  },
+
 // ADMIN PAYMENT API :
   getPayments: async (page = 1, search?: string): Promise<unknown> => {
     const params: { page: number; per_page: number; search?: string } = {

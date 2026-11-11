@@ -5,6 +5,11 @@ import { useEffect, useState, type FormEvent } from "react"
 import { LoadingState } from "@/components/loading-state"
 import { ModalError } from "@/components/modal-error"
 import { ModalLogoWatermark } from "@/components/modal-logo-watermark"
+import {
+  readSelectionOptions,
+  SelectionCombobox,
+  type SelectionOption,
+} from "@/components/selection-combobox"
 import type { ViewPayment } from "@/components/view-payment-modal"
 import {
   AlertDialog,
@@ -21,7 +26,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { toApiErrorMessage } from "@/lib/apiService"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { apiService, toApiErrorMessage } from "@/lib/apiService"
 import { ChevronDown } from "lucide-react"
 
 function YesNoDropdown({
@@ -66,6 +78,13 @@ function YesNoDropdown({
   )
 }
 
+function withCurrentOption(options: SelectionOption[], current: string) {
+  const text = current.trim()
+  if (!text) return options
+  if (options.some((option) => option.value === text || option.label === text)) return options
+  return [{ value: text, label: text }, ...options]
+}
+
 export function EditPaymentModal({
   open,
   payment,
@@ -75,7 +94,7 @@ export function EditPaymentModal({
   open: boolean
   payment: ViewPayment | null
   onOpenChangeAction: (open: boolean) => void
-  onSavedAction: (payment: ViewPayment) => void | Promise<void>
+  onSavedAction: (payment: ViewPayment, remarks: string) => void | Promise<void>
 }) {
   const [documentNumber, setDocumentNumber] = useState("")
   const [date, setDate] = useState("")
@@ -88,9 +107,32 @@ export function EditPaymentModal({
   const [eligibleForRebate, setEligibleForRebate] = useState("")
   const [genericCollector, setGenericCollector] = useState("")
   const [location, setLocation] = useState("")
+  const [remarks, setRemarks] = useState("")
+  const [salesOrders, setSalesOrders] = useState<SelectionOption[]>([])
+  const [locations, setLocations] = useState<SelectionOption[]>([])
+  const [selectionsLoading, setSelectionsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+
+  const hasChanges =
+    !!payment &&
+    (documentNumber.trim() !== payment.documentNumber.trim() ||
+      date.trim() !== payment.date.trim() ||
+      name.trim() !== payment.name.trim() ||
+      orNumber.trim() !== payment.orNumber.trim() ||
+      maximumOfAmount.trim() !== String(payment.maximumOfAmount) ||
+      memoMain.trim() !== payment.memoMain.trim() ||
+      minimumSalesOrderNumber.trim() !== payment.minimumSalesOrderNumber.trim() ||
+      minimumInvoiceNumberLeasing.trim() !==
+        payment.minimumInvoiceNumberLeasing.trim() ||
+      eligibleForRebate.trim() !== payment.eligibleForRebate.trim() ||
+      genericCollector.trim() !== payment.genericCollector.trim() ||
+      location.trim() !== payment.location.trim())
+
+  useEffect(() => {
+    if (!hasChanges && remarks) setRemarks("")
+  }, [hasChanges, remarks])
 
   useEffect(() => {
     if (!open || !payment) return
@@ -106,12 +148,52 @@ export function EditPaymentModal({
     setEligibleForRebate(payment.eligibleForRebate)
     setGenericCollector(payment.genericCollector)
     setLocation(payment.location)
+    setRemarks("")
     setError("")
     setSaving(false)
     setLoading(true)
+    setSelectionsLoading(true)
     const timer = window.setTimeout(() => {
       if (!cancelled) setLoading(false)
     }, 400)
+
+    void Promise.all([
+      apiService.getSalesOrderSelections(),
+      apiService.getLocationSelections(),
+    ])
+      .then(([soPayload, locationPayload]) => {
+        if (cancelled) return
+        setSalesOrders(
+          readSelectionOptions(soPayload, [
+            "so_number",
+            "sales_order_no",
+            "sales_order_number",
+            "number",
+            "name",
+            "label",
+            "code",
+          ]),
+        )
+        setLocations(
+          readSelectionOptions(locationPayload, [
+            "location_name",
+            "name",
+            "label",
+            "code",
+            "branch_code",
+          ]),
+        )
+      })
+      .catch((loadError) => {
+        if (cancelled) return
+        setError(
+          toApiErrorMessage(loadError, "Sales order and location options could not be loaded."),
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setSelectionsLoading(false)
+      })
+
     return () => {
       cancelled = true
       window.clearTimeout(timer)
@@ -123,28 +205,40 @@ export function EditPaymentModal({
     if (!payment) return
     const nextName = name.trim()
     const nextDocument = documentNumber.trim()
+    const nextRemarks = remarks.trim()
     const amount = Number(maximumOfAmount)
     if (!nextDocument || !nextName || !Number.isFinite(amount)) {
       setError("Fill in the document number, name, and a valid amount.")
       return
     }
+    if (!hasChanges) {
+      setError("Change at least one field before saving.")
+      return
+    }
+    if (!nextRemarks) {
+      setError("Add remarks before saving your changes.")
+      return
+    }
     setSaving(true)
     setError("")
     try {
-      await onSavedAction({
-        ...payment,
-        documentNumber: nextDocument,
-        date: date.trim(),
-        name: nextName,
-        orNumber: orNumber.trim(),
-        maximumOfAmount: amount,
-        memoMain: memoMain.trim(),
-        minimumSalesOrderNumber: minimumSalesOrderNumber.trim(),
-        minimumInvoiceNumberLeasing: minimumInvoiceNumberLeasing.trim(),
-        eligibleForRebate: eligibleForRebate.trim(),
-        genericCollector: genericCollector.trim(),
-        location: location.trim(),
-      })
+      await onSavedAction(
+        {
+          ...payment,
+          documentNumber: nextDocument,
+          date: date.trim(),
+          name: nextName,
+          orNumber: orNumber.trim(),
+          maximumOfAmount: amount,
+          memoMain: memoMain.trim(),
+          minimumSalesOrderNumber: minimumSalesOrderNumber.trim(),
+          minimumInvoiceNumberLeasing: minimumInvoiceNumberLeasing.trim(),
+          eligibleForRebate: eligibleForRebate.trim(),
+          genericCollector: genericCollector.trim(),
+          location: location.trim(),
+        },
+        nextRemarks,
+      )
       onOpenChangeAction(false)
     } catch (saveError) {
       setError(toApiErrorMessage(saveError, "This payment could not be saved."))
@@ -222,16 +316,19 @@ export function EditPaymentModal({
                     className="h-10 bg-white text-blue-950"
                   />
                 </label>
-                <label className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5">
                   <span className="text-sm font-semibold text-blue-950">
                     Minimum of sales order number
                   </span>
-                  <Input
+                  <SelectionCombobox
+                    options={withCurrentOption(salesOrders, minimumSalesOrderNumber)}
                     value={minimumSalesOrderNumber}
-                    onChange={(event) => setMinimumSalesOrderNumber(event.target.value)}
-                    className="h-10 bg-white text-blue-950"
+                    onValueChange={setMinimumSalesOrderNumber}
+                    placeholder="Select a sales order"
+                    emptyLabel="No sales orders found."
+                    loading={selectionsLoading}
                   />
-                </label>
+                </div>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-sm font-semibold text-blue-950">
                     Minimum of invoice number - leasing
@@ -254,12 +351,29 @@ export function EditPaymentModal({
                     className="h-10 bg-white text-blue-950"
                   />
                 </label>
-                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <span className="text-sm font-semibold text-blue-950">Location</span>
-                  <Input
+                  <SelectionCombobox
+                    options={withCurrentOption(locations, location)}
                     value={location}
-                    onChange={(event) => setLocation(event.target.value)}
-                    className="h-10 bg-white text-blue-950"
+                    onValueChange={setLocation}
+                    placeholder="Select a location"
+                    emptyLabel="No locations found."
+                    loading={selectionsLoading}
+                  />
+                </div>
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-sm font-semibold text-blue-950">Remarks</span>
+                  <Textarea
+                    value={remarks}
+                    onChange={(event) => setRemarks(event.target.value)}
+                    disabled={!hasChanges}
+                    placeholder={
+                      hasChanges
+                        ? "Describe why this payment is being updated"
+                        : "Make a change to enable remarks"
+                    }
+                    className="min-h-24 bg-white text-blue-950 disabled:bg-blue-50/60"
                   />
                 </label>
                 {error ? (
@@ -279,14 +393,31 @@ export function EditPaymentModal({
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="cursor-pointer bg-blue-800 px-3 text-white hover:bg-blue-900"
-                  disabled={saving || !payment}
-                >
-                  {saving ? "Saving" : "Save"}
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          type="submit"
+                          size="sm"
+                          className="cursor-pointer bg-blue-800 px-3 text-white hover:bg-blue-900"
+                          disabled={saving || !payment || !hasChanges || !remarks.trim()}
+                        >
+                          {saving ? "Saving" : "Save"}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {saving || !payment || !hasChanges || !remarks.trim() ? (
+                      <TooltipContent side="top">
+                        {!payment || saving
+                          ? "Saving is unavailable right now"
+                          : !hasChanges
+                            ? "Make a change before saving"
+                            : "Add remarks before saving"}
+                      </TooltipContent>
+                    ) : null}
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </form>
           )}

@@ -200,7 +200,7 @@ function readPaymentPage(payload: unknown, count: number) {
   return { currentPage, lastPage: Math.max(lastPage, count > 0 ? 1 : 1) }
 }
 
-function paymentPayload(payment: ViewPayment): Record<string, unknown> {
+function paymentPayload(payment: ViewPayment, remarks: string): Record<string, unknown> {
   return {
     document_number: payment.documentNumber,
     payment_date: payment.date,
@@ -208,6 +208,7 @@ function paymentPayload(payment: ViewPayment): Record<string, unknown> {
     amount: payment.maximumOfAmount,
     memo_description: payment.memoMain,
     invoice_number: payment.minimumInvoiceNumberLeasing,
+    so_number: payment.minimumSalesOrderNumber,
     isrebatable:
       payment.eligibleForRebate.toLowerCase() === "yes"
         ? 1
@@ -216,6 +217,7 @@ function paymentPayload(payment: ViewPayment): Record<string, unknown> {
           : payment.eligibleForRebate,
     generic_collector: payment.genericCollector,
     location: payment.location,
+    remarks: remarks.trim(),
   }
 }
 
@@ -293,9 +295,9 @@ export default function AdminPaymentsPage() {
     setReloadKey((key) => key + 1)
   }
 
-  async function savePayment(next: ViewPayment) {
+  async function savePayment(next: ViewPayment, remarks: string) {
     try {
-      await apiService.updatePayment(next.id, paymentPayload(next))
+      await apiService.updatePayment(next.id, paymentPayload(next, remarks))
       setEditing(null)
       setViewing((current) => (current?.id === next.id ? next : current))
       setReloadKey((key) => key + 1)
