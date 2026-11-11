@@ -48,6 +48,33 @@ type ListedUser = {
   email?: string
   code?: string
   branch_code?: string
+  created_at?: string
+  updated_at?: string
+}
+
+type UpdateTone = "new" | "recent" | null
+
+const NEW_UPDATE_MS = 24 * 60 * 60 * 1000
+const RECENT_UPDATE_MS = 7 * 24 * 60 * 60 * 1000
+
+function parseWhen(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function updateTone(user: ListedUser): UpdateTone {
+  const updated = parseWhen(user.updated_at)
+  if (!updated) return null
+  const created = parseWhen(user.created_at)
+  const wasEdited =
+    !created || Math.abs(updated.getTime() - created.getTime()) > 60_000
+  if (!wasEdited) return null
+  const age = Date.now() - updated.getTime()
+  if (age < 0) return "new"
+  if (age <= NEW_UPDATE_MS) return "new"
+  if (age <= RECENT_UPDATE_MS) return "recent"
+  return null
 }
 
 const pageSize = 10
@@ -93,7 +120,27 @@ function listedUsers(payload: unknown): ListedUser[] {
         : Array.isArray(record.data)
           ? record.data
           : []
-  return list.filter((item): item is ListedUser => !!item && typeof item === "object")
+  return list.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const row = item as ListedUser & Record<string, unknown>
+    return [
+      {
+        ...row,
+        created_at:
+          typeof row.created_at === "string"
+            ? row.created_at
+            : typeof row.createdAt === "string"
+              ? row.createdAt
+              : undefined,
+        updated_at:
+          typeof row.updated_at === "string"
+            ? row.updated_at
+            : typeof row.updatedAt === "string"
+              ? row.updatedAt
+              : undefined,
+      },
+    ]
+  })
 }
 
 function listedBranches(payload: unknown): string[] {
@@ -230,6 +277,16 @@ export default function AdminUsersPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               People who can sign in to the ledger.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-blue-900/70">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 rounded-full bg-amber-400 ring-1 ring-amber-500/40" />
+                New update (24h)
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 rounded-full bg-blue-500 ring-1 ring-blue-600/30" />
+                Recent update (7d)
+              </span>
+            </div>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <div className="relative min-w-64 flex-1">
@@ -316,13 +373,20 @@ export default function AdminUsersPage() {
               users.map((user) => {
                 const name = displayName(user)
                 const leaving = leavingId != null && user.id === leavingId
+                const tone = updateTone(user)
+                const rowTone =
+                  tone === "new"
+                    ? "bg-amber-50/90 hover:bg-amber-100/80"
+                    : tone === "recent"
+                      ? "bg-blue-50/80 hover:bg-blue-100/80"
+                      : "bg-white hover:bg-blue-50/70"
                 return (
                   <TableRow
                     key={user.id ?? user.email}
                     className={
                       leaving
                         ? "pointer-events-none animate-user-remove"
-                        : "hover:bg-blue-50/70"
+                        : rowTone
                     }
                   >
                     <TableCell className="px-5 py-3">
@@ -330,7 +394,20 @@ export default function AdminUsersPage() {
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-800 text-xs font-semibold text-white">
                           {initials(name)}
                         </span>
-                        <span className="font-medium text-blue-950">{name}</span>
+                        <div className="min-w-0">
+                          <span className="font-medium text-blue-950">{name}</span>
+                          {tone ? (
+                            <span
+                              className={
+                                tone === "new"
+                                  ? "mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-800 ring-1 ring-amber-200 uppercase"
+                                  : "mt-1 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-blue-800 ring-1 ring-blue-200 uppercase"
+                              }
+                            >
+                              {tone === "new" ? "New update" : "Recent update"}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="px-5 py-3 text-blue-950/80">{user.email || "—"}</TableCell>
