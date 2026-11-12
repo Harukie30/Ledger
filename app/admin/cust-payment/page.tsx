@@ -125,11 +125,14 @@ function readPayment(item: unknown): PaymentRow | null {
   const id = textOf(row.id)
   if (!id) return null
   const installment = installmentOf(row.installment)
+  const voidFlag = row.is_void ?? row.is_voided ?? row.voided
   const voided =
-    row.voided === true ||
-    row.is_voided === true ||
-    row.voided === 1 ||
-    textOf(row.status).toLowerCase() === "voided"
+    voidFlag === true ||
+    voidFlag === 1 ||
+    textOf(voidFlag).toLowerCase() === "1" ||
+    textOf(voidFlag).toLowerCase() === "true" ||
+    textOf(row.status).toLowerCase() === "voided" ||
+    textOf(row.status).toLowerCase() === "void"
   const rebateRaw =
     textOf(row.eligible_for_rebate) ||
     textOf(row.isrebatable) ||
@@ -165,6 +168,12 @@ function readPayment(item: unknown): PaymentRow | null {
     genericCollector: textOf(row.generic_collector),
     location: locationOf(row.location),
     voided: voided || undefined,
+    voidReason:
+      textOf(row.reasonToVoid) ||
+      textOf(row.reason_to_void) ||
+      textOf(row.void_reason) ||
+      textOf(row.reason) ||
+      undefined,
     remarks: readRemarks(row.remarks),
   }
 }
@@ -320,6 +329,7 @@ export default function AdminPaymentsPage() {
       const updated: PaymentRow = {
         ...payment,
         voided: true,
+        voidReason: reason,
         remarks: [
           {
             id: `void-${Date.now()}`,
@@ -487,10 +497,13 @@ export default function AdminPaymentsPage() {
                           type="button"
                           size="icon-sm"
                           variant="outline"
-                          className="shrink-0 cursor-pointer bg-white text-blue-700 hover:bg-blue-50"
+                          className="shrink-0 cursor-pointer bg-white text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed"
                           aria-label={`Edit ${payment.documentNumber}`}
-                          disabled={payment.voided}
-                          onClick={() => setEditing(payment)}
+                          disabled={!!payment.voided}
+                          onClick={() => {
+                            if (payment.voided) return
+                            setEditing(payment)
+                          }}
                         >
                           <Pencil />
                         </Button>
@@ -498,10 +511,13 @@ export default function AdminPaymentsPage() {
                           type="button"
                           size="icon-sm"
                           variant="outline"
-                          className="shrink-0 cursor-pointer bg-white text-red-600 hover:bg-red-50"
+                          className="shrink-0 cursor-pointer bg-white text-red-600 hover:bg-red-50 disabled:cursor-not-allowed"
                           aria-label={`Void ${payment.documentNumber}`}
-                          disabled={payment.voided}
-                          onClick={() => setVoiding(payment)}
+                          disabled={!!payment.voided}
+                          onClick={() => {
+                            if (payment.voided) return
+                            setVoiding(payment)
+                          }}
                         >
                           <Ban />
                         </Button>

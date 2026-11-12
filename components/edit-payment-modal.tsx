@@ -7,7 +7,6 @@ import { ModalError } from "@/components/modal-error"
 import { ModalLogoWatermark } from "@/components/modal-logo-watermark"
 import {
   readSelectionOptions,
-  SelectionCombobox,
   type SelectionOption,
 } from "@/components/selection-combobox"
 import type { ViewPayment } from "@/components/view-payment-modal"
@@ -83,6 +82,70 @@ function withCurrentOption(options: SelectionOption[], current: string) {
   if (!text) return options
   if (options.some((option) => option.value === text || option.label === text)) return options
   return [{ value: text, label: text }, ...options]
+}
+
+function SelectionDropdown({
+  options,
+  value,
+  onValueChange,
+  placeholder,
+  emptyLabel,
+  loading = false,
+}: {
+  options: SelectionOption[]
+  value: string
+  onValueChange: (value: string) => void
+  placeholder: string
+  emptyLabel: string
+  loading?: boolean
+}) {
+  const items = withCurrentOption(options, value)
+  const selected = items.find((option) => option.value === value || option.label === value)
+  const selectedLabel = selected?.label ?? value.trim()
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={loading}
+          className="h-10 w-full justify-between bg-white px-3 text-sm font-normal text-blue-950 hover:bg-white"
+        >
+          <span
+            className={
+              selectedLabel
+                ? "truncate text-blue-950"
+                : "truncate text-muted-foreground"
+            }
+          >
+            {loading ? "Loading…" : selectedLabel || placeholder}
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-64 w-(--radix-dropdown-menu-trigger-width)">
+        {items.length === 0 ? (
+          <div className="px-2 py-1.5 text-sm text-muted-foreground">{emptyLabel}</div>
+        ) : (
+          <DropdownMenuRadioGroup
+            value={selected?.value ?? value}
+            onValueChange={onValueChange}
+          >
+            {items.map((option) => (
+              <DropdownMenuRadioItem
+                key={option.value}
+                value={option.value}
+                className="cursor-pointer"
+              >
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export function EditPaymentModal({
@@ -320,8 +383,8 @@ export function EditPaymentModal({
                   <span className="text-sm font-semibold text-blue-950">
                     Minimum of sales order number
                   </span>
-                  <SelectionCombobox
-                    options={withCurrentOption(salesOrders, minimumSalesOrderNumber)}
+                  <SelectionDropdown
+                    options={salesOrders}
                     value={minimumSalesOrderNumber}
                     onValueChange={setMinimumSalesOrderNumber}
                     placeholder="Select a sales order"
@@ -353,8 +416,8 @@ export function EditPaymentModal({
                 </label>
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <span className="text-sm font-semibold text-blue-950">Location</span>
-                  <SelectionCombobox
-                    options={withCurrentOption(locations, location)}
+                  <SelectionDropdown
+                    options={locations}
                     value={location}
                     onValueChange={setLocation}
                     placeholder="Select a location"
