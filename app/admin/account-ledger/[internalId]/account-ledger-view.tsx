@@ -754,28 +754,11 @@ function PenaltyBreakdown({ line }: { line: LedgerLine }) {
         <DialogHeader>
           <DialogTitle>Penalty · Installment #{textOf(line.installment_number)}</DialogTitle>
           <DialogDescription>
-            Due {formatDate(textOf(line.due_date))} · 4% of unpaid per late month (rounded up)
+            Due {formatDate(textOf(line.due_date))}
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh] pr-3">
           <div className="flex flex-col gap-3 text-sm">
-            <div className="grid grid-cols-3 gap-2 rounded-lg bg-blue-50 p-3 text-blue-950">
-              <div>
-                <p className="text-xs text-blue-800">Months due</p>
-                <p className="font-semibold">{months.length}</p>
-              </div>
-              <div>
-                <p className="text-xs text-blue-800">Amount</p>
-                <p className="font-semibold">{money(penalty)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-blue-800">Status</p>
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${penaltyStatusClass[status]}`}>
-                  {status}
-                </span>
-              </div>
-            </div>
-
             <Table>
               <TableHeader>
                 <TableRow>
