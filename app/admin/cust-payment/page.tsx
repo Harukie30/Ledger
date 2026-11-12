@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Ban, Eye, Pencil, RefreshCw, Search } from "lucide-react"
+import { Ban, ChevronDown, Eye, Pencil, RefreshCw, Search } from "lucide-react"
 
 import { LoadingState } from "@/components/loading-state"
 import { ErrorModal, SuccessModal } from "@/components/status-modals"
@@ -10,6 +10,13 @@ import { EditPaymentModal } from "@/components/edit-payment-modal"
 import { ViewPaymentModal, type PaymentRemark, type ViewPayment } from "@/components/view-payment-modal"
 import { VoidPaymentModal } from "@/components/void-payment-modal"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Pagination,
@@ -41,6 +48,13 @@ const columns = [
 ]
 
 type PaymentRow = ViewPayment
+type PaymentStatusFilter = "all" | "active" | "voided"
+
+const statusFilterLabels: Record<PaymentStatusFilter, string> = {
+  all: "All statuses",
+  active: "Active",
+  voided: "Voided",
+}
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -84,6 +98,18 @@ function formatDate(value: string) {
   return displayDate.format(date)
 }
 
+function toApiDate(value: string) {
+  const text = value.trim()
+  if (!text) return text
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10)
+  const parsed = new Date(text)
+  if (Number.isNaN(parsed.getTime())) return text
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, "0")
+  const day = String(parsed.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 function locationOf(value: unknown) {
   if (typeof value === "string" || typeof value === "number") return String(value)
   if (value && typeof value === "object") {
@@ -93,7 +119,33 @@ function locationOf(value: unknown) {
   return ""
 }
 
-function readRemarks(value: unknown): PaymentRemark[] {
+function idOf(value: unknown) {
+  const number = typeof value === "number" ? value : Number(textOf(value))
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+function relationId(value: unknown, fallback?: unknown) {
+  if (value && typeof value === "object") {
+    const id = idOf((value as { id?: unknown }).id)
+    if (id) return id
+  }
+  return idOf(fallback)
+}
+
+function readRemarks(value: unknown, editedBy?: string): PaymentRemark[] {
+  if (typeof value === "string") {
+    const detail = value.trim()
+    if (!detail) return []
+    return [
+      {
+        id: "edit-remark",
+        action: "edited",
+        by: editedBy || "Admin",
+        at: "",
+        detail,
+      },
+    ]
+  }
   if (!Array.isArray(value)) return []
   return value.flatMap((item, index) => {
     if (!item || typeof item !== "object") return []
@@ -106,7 +158,7 @@ function readRemarks(value: unknown): PaymentRemark[] {
       {
         id: textOf(row.id) || `remark-${index}`,
         action,
-        by: textOf(row.by) || textOf(row.user_name) || textOf(row.user) || "Admin",
+        by: textOf(row.by) || textOf(row.user_name) || textOf(row.user) || editedBy || "Admin",
         at: atRaw ? formatDate(atRaw) || remarkWhen.format(new Date(atRaw)) : "",
         detail: textOf(row.detail) || textOf(row.reason) || textOf(row.message) || undefined,
       },
@@ -139,6 +191,18 @@ function readPayment(item: unknown): PaymentRow | null {
     textOf(row.is_rebatable)
   const rebate = rebateRaw.toLowerCase()
   const dateRaw = textOf(row.payment_date) || textOf(row.date)
+  const editedByRecord =
+    row.editedBy && typeof row.editedBy === "object"
+      ? (row.editedBy as { name?: unknown })
+      : null
+  const editedByName = textOf(editedByRecord?.name)
+  const remarks = readRemarks(row.remarks, editedByName)
+  const edited =
+    !voided &&
+    (!!idOf(row.edited_by) ||
+      !!editedByName ||
+      remarks.some((remark) => remark.action === "edited") ||
+      (typeof row.remarks === "string" && row.remarks.trim().length > 0))
   return {
     id,
     documentNumber: textOf(row.document_number) || "—",
@@ -167,6 +231,8 @@ function readPayment(item: unknown): PaymentRow | null {
           : rebateRaw,
     genericCollector: textOf(row.generic_collector),
     location: locationOf(row.location),
+    locationId: relationId(row.location, row.location_id),
+    installmentId: relationId(row.installment, row.installment_id),
     voided: voided || undefined,
     voidReason:
       textOf(row.reasonToVoid) ||
@@ -174,7 +240,8 @@ function readPayment(item: unknown): PaymentRow | null {
       textOf(row.void_reason) ||
       textOf(row.reason) ||
       undefined,
-    remarks: readRemarks(row.remarks),
+    edited: edited || undefined,
+    remarks,
   }
 }
 
@@ -209,15 +276,21 @@ function readPaymentPage(payload: unknown, count: number) {
   return { currentPage, lastPage: Math.max(lastPage, count > 0 ? 1 : 1) }
 }
 
+function asPayloadId(value: number | undefined, fallback: string) {
+  const fromId = value != null && Number.isFinite(value) ? value : Number(fallback)
+  return Number.isFinite(fromId) ? fromId : 0
+}
+
 function paymentPayload(payment: ViewPayment, remarks: string): Record<string, unknown> {
   return {
     document_number: payment.documentNumber,
-    payment_date: payment.date,
+    payment_date: toApiDate(payment.date),
     or_number: payment.orNumber,
     amount: payment.maximumOfAmount,
     memo_description: payment.memoMain,
     invoice_number: payment.minimumInvoiceNumberLeasing,
-    so_number: payment.minimumSalesOrderNumber,
+    locationId: asPayloadId(payment.locationId, payment.location),
+    installmentId: asPayloadId(payment.installmentId, payment.minimumSalesOrderNumber),
     isrebatable:
       payment.eligibleForRebate.toLowerCase() === "yes"
         ? 1
@@ -225,7 +298,6 @@ function paymentPayload(payment: ViewPayment, remarks: string): Record<string, u
           ? 0
           : payment.eligibleForRebate,
     generic_collector: payment.genericCollector,
-    location: payment.location,
     remarks: remarks.trim(),
   }
 }
@@ -241,6 +313,7 @@ export default function AdminPaymentsPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [query, setQuery] = useState("")
   const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>("all")
   const [page, setPage] = useState(1)
   const [lastPage, setLastPage] = useState(1)
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -275,9 +348,13 @@ export default function AdminPaymentsPage() {
       setLoading(true)
       setError("")
       try {
-        const data = await apiService.getPayments(page, search)
+        const data = await apiService.getPayments(page, search, statusFilter)
         if (!cancelled) {
-          const next = readPayments(data)
+          const next = readPayments(data).filter((payment) => {
+            if (statusFilter === "voided") return !!payment.voided
+            if (statusFilter === "active") return !payment.voided
+            return true
+          })
           const pager = readPaymentPage(data, next.length)
           setPayments(next)
           setPage(pager.currentPage)
@@ -297,7 +374,7 @@ export default function AdminPaymentsPage() {
     return () => {
       cancelled = true
     }
-  }, [page, reloadKey, search])
+  }, [page, reloadKey, search, statusFilter])
 
   function refresh() {
     setLoading(true)
@@ -377,6 +454,34 @@ export default function AdminPaymentsPage() {
                 className="h-10 bg-blue-50/60 pl-9"
               />
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 min-w-36 justify-between bg-white px-3 text-sm font-normal text-blue-950 hover:bg-white"
+                >
+                  <span>{statusFilterLabels[statusFilter]}</span>
+                  <ChevronDown className="size-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
+                <DropdownMenuRadioGroup
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    const next = value as PaymentStatusFilter
+                    setStatusFilter(next)
+                    setPage(1)
+                  }}
+                >
+                  {(Object.keys(statusFilterLabels) as PaymentStatusFilter[]).map((value) => (
+                    <DropdownMenuRadioItem key={value} value={value} className="cursor-pointer">
+                      {statusFilterLabels[value]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               type="button"
               size="sm"
@@ -420,18 +525,20 @@ export default function AdminPaymentsPage() {
                   <TableEmpty
                     label={
                       error ||
-                      (search ? "No payments match that search." : "No payments are listed yet.")
+                      (search || statusFilter !== "all"
+                        ? "No payments match that filter."
+                        : "No payments are listed yet.")
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               payments.map((payment) => {
-                const edited = !payment.voided && payment.remarks.some((remark) => remark.action === "edited")
+                const edited = !payment.voided && !!payment.edited
                 const rowTone = payment.voided
                   ? "bg-red-50"
                   : edited
-                    ? "bg-blue-50"
+                    ? "bg-amber-50"
                     : "bg-white"
                 return (
                   <TableRow
@@ -440,20 +547,34 @@ export default function AdminPaymentsPage() {
                       payment.voided
                         ? "bg-red-50/80 hover:bg-red-50"
                         : edited
-                          ? "bg-blue-50/80 hover:bg-blue-100/80"
+                          ? "bg-amber-50/90 hover:bg-amber-100/80"
                           : "bg-white hover:bg-blue-50/70"
                     }
                   >
                     <TableCell className="px-5 py-3">
-                      <span
-                        className={
-                          payment.voided
-                            ? "inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold tracking-wide text-red-700 ring-1 ring-red-200"
-                            : "inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold tracking-wide text-blue-800 ring-1 ring-blue-200"
-                        }
-                      >
-                        {payment.documentNumber}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={
+                            payment.voided
+                              ? "inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold tracking-wide text-red-700 ring-1 ring-red-200"
+                              : edited
+                                ? "inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold tracking-wide text-amber-900 ring-1 ring-amber-300"
+                                : "inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold tracking-wide text-blue-800 ring-1 ring-blue-200"
+                          }
+                        >
+                          {payment.documentNumber}
+                        </span>
+                        {edited ? (
+                          <span className="inline-flex rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-950 uppercase ring-1 ring-amber-300">
+                            Edited
+                          </span>
+                        ) : null}
+                        {payment.voided ? (
+                          <span className="inline-flex rounded-full bg-red-200/80 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-red-900 uppercase ring-1 ring-red-300">
+                            Voided
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="px-5 py-3 whitespace-nowrap text-blue-950/80">
                       {payment.date}

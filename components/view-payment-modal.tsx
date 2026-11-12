@@ -40,8 +40,11 @@ export type ViewPayment = {
   eligibleForRebate: string
   genericCollector: string
   location: string
+  locationId?: number
+  installmentId?: number
   voided?: boolean
   voidReason?: string
+  edited?: boolean
   remarks: PaymentRemark[]
 }
 

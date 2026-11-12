@@ -165,11 +165,11 @@ export function EditPaymentModal({
   const [orNumber, setOrNumber] = useState("")
   const [maximumOfAmount, setMaximumOfAmount] = useState("")
   const [memoMain, setMemoMain] = useState("")
-  const [minimumSalesOrderNumber, setMinimumSalesOrderNumber] = useState("")
+  const [installmentId, setInstallmentId] = useState("")
   const [minimumInvoiceNumberLeasing, setMinimumInvoiceNumberLeasing] = useState("")
   const [eligibleForRebate, setEligibleForRebate] = useState("")
   const [genericCollector, setGenericCollector] = useState("")
-  const [location, setLocation] = useState("")
+  const [locationId, setLocationId] = useState("")
   const [remarks, setRemarks] = useState("")
   const [salesOrders, setSalesOrders] = useState<SelectionOption[]>([])
   const [locations, setLocations] = useState<SelectionOption[]>([])
@@ -177,6 +177,9 @@ export function EditPaymentModal({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+
+  const currentInstallmentId = payment?.installmentId != null ? String(payment.installmentId) : ""
+  const currentLocationId = payment?.locationId != null ? String(payment.locationId) : ""
 
   const hasChanges =
     !!payment &&
@@ -186,12 +189,12 @@ export function EditPaymentModal({
       orNumber.trim() !== payment.orNumber.trim() ||
       maximumOfAmount.trim() !== String(payment.maximumOfAmount) ||
       memoMain.trim() !== payment.memoMain.trim() ||
-      minimumSalesOrderNumber.trim() !== payment.minimumSalesOrderNumber.trim() ||
+      installmentId !== currentInstallmentId ||
       minimumInvoiceNumberLeasing.trim() !==
         payment.minimumInvoiceNumberLeasing.trim() ||
       eligibleForRebate.trim() !== payment.eligibleForRebate.trim() ||
       genericCollector.trim() !== payment.genericCollector.trim() ||
-      location.trim() !== payment.location.trim())
+      locationId !== currentLocationId)
 
   useEffect(() => {
     if (!hasChanges && remarks) setRemarks("")
@@ -206,11 +209,11 @@ export function EditPaymentModal({
     setOrNumber(payment.orNumber)
     setMaximumOfAmount(String(payment.maximumOfAmount))
     setMemoMain(payment.memoMain)
-    setMinimumSalesOrderNumber(payment.minimumSalesOrderNumber)
+    setInstallmentId(payment.installmentId != null ? String(payment.installmentId) : "")
     setMinimumInvoiceNumberLeasing(payment.minimumInvoiceNumberLeasing)
     setEligibleForRebate(payment.eligibleForRebate)
     setGenericCollector(payment.genericCollector)
-    setLocation(payment.location)
+    setLocationId(payment.locationId != null ? String(payment.locationId) : "")
     setRemarks("")
     setError("")
     setSaving(false)
@@ -226,26 +229,39 @@ export function EditPaymentModal({
     ])
       .then(([soPayload, locationPayload]) => {
         if (cancelled) return
-        setSalesOrders(
-          readSelectionOptions(soPayload, [
-            "so_number",
-            "sales_order_no",
-            "sales_order_number",
-            "number",
-            "name",
-            "label",
-            "code",
-          ]),
-        )
-        setLocations(
-          readSelectionOptions(locationPayload, [
-            "location_name",
-            "name",
-            "label",
-            "code",
-            "branch_code",
-          ]),
-        )
+        const nextSalesOrders = readSelectionOptions(soPayload, [
+          "so_number",
+          "sales_order_no",
+          "sales_order_number",
+          "number",
+          "name",
+          "label",
+          "code",
+        ])
+        const nextLocations = readSelectionOptions(locationPayload, [
+          "location_name",
+          "name",
+          "label",
+          "code",
+          "branch_code",
+        ])
+        setSalesOrders(nextSalesOrders)
+        setLocations(nextLocations)
+
+        if (payment.installmentId == null && payment.minimumSalesOrderNumber) {
+          const match = nextSalesOrders.find(
+            (option) =>
+              option.label === payment.minimumSalesOrderNumber ||
+              option.value === payment.minimumSalesOrderNumber,
+          )
+          if (match) setInstallmentId(match.value)
+        }
+        if (payment.locationId == null && payment.location) {
+          const match = nextLocations.find(
+            (option) => option.label === payment.location || option.value === payment.location,
+          )
+          if (match) setLocationId(match.value)
+        }
       })
       .catch((loadError) => {
         if (cancelled) return
@@ -270,8 +286,18 @@ export function EditPaymentModal({
     const nextDocument = documentNumber.trim()
     const nextRemarks = remarks.trim()
     const amount = Number(maximumOfAmount)
+    const nextInstallmentId = Number(installmentId)
+    const nextLocationId = Number(locationId)
     if (!nextDocument || !nextName || !Number.isFinite(amount)) {
       setError("Fill in the document number, name, and a valid amount.")
+      return
+    }
+    if (!Number.isFinite(nextInstallmentId) || nextInstallmentId <= 0) {
+      setError("Select a sales order.")
+      return
+    }
+    if (!Number.isFinite(nextLocationId) || nextLocationId <= 0) {
+      setError("Select a location.")
       return
     }
     if (!hasChanges) {
@@ -282,6 +308,12 @@ export function EditPaymentModal({
       setError("Add remarks before saving your changes.")
       return
     }
+    const selectedSalesOrder = salesOrders.find(
+      (option) => option.value === installmentId || option.label === installmentId,
+    )
+    const selectedLocation = locations.find(
+      (option) => option.value === locationId || option.label === locationId,
+    )
     setSaving(true)
     setError("")
     try {
@@ -294,11 +326,14 @@ export function EditPaymentModal({
           orNumber: orNumber.trim(),
           maximumOfAmount: amount,
           memoMain: memoMain.trim(),
-          minimumSalesOrderNumber: minimumSalesOrderNumber.trim(),
+          minimumSalesOrderNumber:
+            selectedSalesOrder?.label || payment.minimumSalesOrderNumber,
           minimumInvoiceNumberLeasing: minimumInvoiceNumberLeasing.trim(),
           eligibleForRebate: eligibleForRebate.trim(),
           genericCollector: genericCollector.trim(),
-          location: location.trim(),
+          location: selectedLocation?.label || payment.location,
+          installmentId: nextInstallmentId,
+          locationId: nextLocationId,
         },
         nextRemarks,
       )
@@ -385,8 +420,8 @@ export function EditPaymentModal({
                   </span>
                   <SelectionDropdown
                     options={salesOrders}
-                    value={minimumSalesOrderNumber}
-                    onValueChange={setMinimumSalesOrderNumber}
+                    value={installmentId}
+                    onValueChange={setInstallmentId}
                     placeholder="Select a sales order"
                     emptyLabel="No sales orders found."
                     loading={selectionsLoading}
@@ -418,8 +453,8 @@ export function EditPaymentModal({
                   <span className="text-sm font-semibold text-blue-950">Location</span>
                   <SelectionDropdown
                     options={locations}
-                    value={location}
-                    onValueChange={setLocation}
+                    value={locationId}
+                    onValueChange={setLocationId}
                     placeholder="Select a location"
                     emptyLabel="No locations found."
                     loading={selectionsLoading}

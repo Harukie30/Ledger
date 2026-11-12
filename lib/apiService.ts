@@ -219,13 +219,30 @@ export const apiService = {
   },
 
 // ADMIN PAYMENT API :
-  getPayments: async (page = 1, search?: string): Promise<unknown> => {
-    const params: { page: number; per_page: number; search?: string } = {
+  getPayments: async (
+    page = 1,
+    search?: string,
+    status?: "all" | "active" | "voided",
+  ): Promise<unknown> => {
+    const params: {
+      page: number;
+      per_page: number;
+      search?: string;
+      is_void?: number;
+      status?: string;
+    } = {
       page,
       per_page: 10,
     };
     const text = search?.trim();
     if (text) params.search = text;
+    if (status === "voided") {
+      params.is_void = 1;
+      params.status = "voided";
+    } else if (status === "active") {
+      params.is_void = 0;
+      params.status = "active";
+    }
     const response = await api.get("/payments", { params });
     return response.data;
   },
