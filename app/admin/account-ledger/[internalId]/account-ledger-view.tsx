@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
-import { BookOpen, Receipt, Search, UserRound, type LucideIcon } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronRight, Receipt, Search, UserRound, type LucideIcon } from "lucide-react"
 
 import { CustomerSetupForm } from "@/components/customer-setup-form"
 import { type LedgerCustomer } from "@/components/ledger-customers"
@@ -189,6 +189,16 @@ function RecordTable({
   rows: ReactNode[][]
   empty: string
 }) {
+  // Rows may carry optional expandable content at index `columns.length`.
+  const [openRows, setOpenRows] = useState<Set<number>>(new Set())
+  const toggleRow = (index: number) =>
+    setOpenRows((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+
   return (
     <div className="flex min-h-[18rem] w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-blue-200 sm:min-h-[22rem]">
       <Table containerClassName="min-h-0 max-w-full flex-1 overflow-auto">
@@ -212,18 +222,66 @@ function RecordTable({
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row, index) => (
-              <TableRow key={`ledger-row-${index}`}>
-                {columns.map((column, cellIndex) => (
-                  <TableCell
-                    key={`ledger-cell-${index}-${cellIndex}-${column}`}
-                    className="px-3 text-xs whitespace-nowrap sm:px-4 sm:text-sm"
-                  >
-                    {row[cellIndex] || "—"}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
+            rows.map((row, index) => {
+              const extra = row[columns.length]
+              const subRows = Array.isArray(extra) ? (extra as ReactNode[][]) : []
+              const details = subRows.length > 0
+              const expanded = openRows.has(index)
+              return (
+                <Fragment key={`ledger-row-${index}`}>
+                  <TableRow className={expanded ? "bg-blue-100/70 hover:bg-blue-100" : undefined}>
+                    {columns.map((column, cellIndex) => (
+                      <TableCell
+                        key={`ledger-cell-${index}-${cellIndex}-${column}`}
+                        className="px-3 text-xs whitespace-nowrap sm:px-4 sm:text-sm"
+                      >
+                        {cellIndex === 0 && details ? (
+                          <button
+                            type="button"
+                            className="inline-flex cursor-pointer items-center gap-1 font-medium text-blue-800 hover:text-blue-950"
+                            aria-expanded={expanded}
+                            aria-label={expanded ? "Hide applied payments" : "Show applied payments"}
+                            onClick={() => toggleRow(index)}
+                          >
+                            {expanded ? (
+                              <ChevronDown className="size-4" aria-hidden />
+                            ) : (
+                              <ChevronRight className="size-4" aria-hidden />
+                            )}
+                            {row[cellIndex]}
+                          </button>
+                        ) : (
+                          row[cellIndex] || "—"
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {expanded
+                    ? subRows.map((subRow, subIndex) => (
+                        <TableRow
+                          key={`ledger-sub-${index}-${subIndex}`}
+                          className="bg-yellow-200"
+                        >
+                          {columns.map((column, cellIndex) => (
+                            <TableCell
+                              key={`ledger-sub-cell-${index}-${subIndex}-${cellIndex}-${column}`}
+                              className={`px-3 text-xs whitespace-nowrap sm:px-4 sm:text-sm ${
+                                cellIndex === 0 ? "border-l-4 border-blue-400" : ""
+                              }`}
+                            >
+                              {cellIndex === 0 ? (
+                                <span className="pl-5 text-muted-foreground">{subRow[cellIndex]}</span>
+                              ) : (
+                                subRow[cellIndex]
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    : null}
+                </Fragment>
+              )
+            })
           )}
         </TableBody>
       </Table>
@@ -531,6 +589,72 @@ function PaymentBreakdown({ line, summary }: { line: LedgerLine; summary: string
   )
 }
 
+/**
+ * Payment date / reference cell.
+ * One payment: plain text. Two or more: the latest one plus a "+N" badge,
+ * and a tooltip listing every payment (date, reference, amount applied).
+ */
+function PaymentCell({ line, field }: { line: LedgerLine; field: "date" | "ref" }) {
+  const breakdown = Array.isArray(line.payment_breakdown) ? (line.payment_breakdown as BreakdownLine[]) : []
+
+  if (breakdown.length <= 1) {
+    return <>{field === "date" ? formatDate(textOf(line.payment_date)) : textOf(line.payment_ref) || "—"}</>
+  }
+
+  const latest = breakdown[breakdown.length - 1]
+  const shown = field === "date" ? formatDate(textOf(latest.date)) : textOf(latest.or_no) || "—"
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{shown}</span>
+      <span
+        className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800"
+        title={`${breakdown.length} payments. Open the row to see them all.`}
+      >
+        +{breakdown.length - 1}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Sub-rows shown under an installment when its chevron is opened.
+ * One row per applied payment, using the SAME columns as the Loan Ledger table
+ * (same order as `loanLedgerColumns`). Installment-level columns (incl. Overdue) are left blank.
+ */
+function buildPaymentSubRows(line: LedgerLine): ReactNode[][] {
+  const breakdown = Array.isArray(line.payment_breakdown) ? (line.payment_breakdown as BreakdownLine[]) : []
+
+  // Only installments with 2+ payments are expandable (one payment is already shown in the row itself)
+  if (breakdown.length <= 1) return []
+
+  return breakdown.map((item, index) => {
+    const principal = Number(item.principal) || 0
+    const interest = Number(item.interest) || 0
+    const penaltyPaid = Number(item.penalty) || 0
+
+    return [
+      "",                                          // Installment No.
+      "",           // Due date
+      formatDate(textOf(item.date)),               // Payment date
+      textOf(item.or_no),                          // Payment reference
+      "",                                          // Monthly installment
+      money(principal + interest),                 // Monthly installment paid
+      money(item.rebate),                          // Rebate
+      "",                                          // Penalty
+      money(penaltyPaid),                          // Penalty paid
+      "",                                          // Monthly principal
+      money(principal),                            // Monthly principal paid
+      "",                                          // Monthly interest
+      money(interest),                             // Monthly interest paid
+      "",                                          // Overdue
+      "",                                          // Running balance without penalty
+      "",                                          // Running balance with penalty
+      "",                                          // Payment breakdown
+    ]
+  })
+}
+
 type PenaltyMonth = {
   month: number
   completedOn: string
@@ -635,6 +759,23 @@ function PenaltyBreakdown({ line }: { line: LedgerLine }) {
         </DialogHeader>
         <ScrollArea className="max-h-[60vh] pr-3">
           <div className="flex flex-col gap-3 text-sm">
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-blue-50 p-3 text-blue-950">
+              <div>
+                <p className="text-xs text-blue-800">Months due</p>
+                <p className="font-semibold">{months.length}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-800">Amount</p>
+                <p className="font-semibold">{money(penalty)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-800">Status</p>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${penaltyStatusClass[status]}`}>
+                  {status}
+                </span>
+              </div>
+            </div>
+
             <Table>
               <TableHeader>
                 <TableRow>
@@ -762,11 +903,13 @@ function readAccount(payload: unknown) {
       : ""
     // Modal with the detailed calculation
     const breakdown: ReactNode = summary ? <PaymentBreakdown line={line} summary={summary} /> : ""
+    // Expandable content under the row (shown when the Installment No. chevron is clicked)
+    const details: ReactNode = buildPaymentSubRows(line)
     return [
       textOf(line.installment_number),
       formatDate(textOf(line.due_date)),
-      formatDate(textOf(line.payment_date)),
-      textOf(line.payment_ref),
+      <PaymentCell key="payment-date" line={line} field="date" />,
+      <PaymentCell key="payment-ref" line={line} field="ref" />,
       money(monthlyInstallment),
       money(line.monthly_installment_paid),
       money(line.rebate),
@@ -780,6 +923,7 @@ function readAccount(payload: unknown) {
       money(line.balance_wo_penalty),
       money(line.balance_w_penalty),
       breakdown,
+      details,
     ]
   })
   const paymentLines = Array.isArray(account.payments) ? (account.payments as PaymentLine[]) : []
