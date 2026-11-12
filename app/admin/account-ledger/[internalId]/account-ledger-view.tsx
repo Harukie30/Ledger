@@ -431,11 +431,6 @@ function BreakdownRow({ label, children }: { label: string; children: ReactNode 
  */
 function BreakdownDetails({ line }: { line: LedgerLine }) {
   const breakdown = Array.isArray(line.payment_breakdown) ? (line.payment_breakdown as BreakdownLine[]) : []
-  const extraMonths = Number(line.extra_months) || 0
-  const accrued = Number(line.penalty_accrued) || 0
-  const totalPenaltyPaid = breakdown.reduce((sum, item) => sum + (Number(item.penalty) || 0), 0)
-  const totalInterest = breakdown.reduce((sum, item) => sum + (Number(item.interest) || 0), 0)
-  const totalPrincipal = breakdown.reduce((sum, item) => sum + (Number(item.principal) || 0), 0)
 
   return (
     <div className="flex flex-col gap-3 text-xs leading-snug">
@@ -470,7 +465,7 @@ function BreakdownDetails({ line }: { line: LedgerLine }) {
               <BreakdownRow label="Cash to apply here">{money(available)}</BreakdownRow>
 
               <div className="mt-1 text-blue-100">
-                Unpaid before: {money(item.unpaid_before)} 
+                Unpaid before: {money(item.unpaid_before)}
               </div>
               <div className="text-blue-100">
                 {newMonths > 0
@@ -523,12 +518,174 @@ function PaymentBreakdown({ line, summary }: { line: LedgerLine; summary: string
           {count > 1 ? ` · ${count} payments` : ""}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-2xl">
         <DialogHeader>
         </DialogHeader>
         <ScrollArea className="max-h-[65vh] pr-3">
           <div className="rounded-lg bg-blue-950 p-3">
             <BreakdownDetails line={line} />
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+type PenaltyMonth = {
+  month: number
+  completedOn: string
+  amount: number
+  paid: number
+  status: "Paid" | "Partially paid" | "Unpaid"
+  source: string
+}
+
+/** Add whole months to a yyyy-mm-dd date, clamping the day (e.g. Jan 31 + 1 month = Feb 28). */
+function addMonthsLabel(value: string, months: number) {
+  const base = new Date(`${value.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(base.getTime())) return "—"
+  const target = new Date(base.getFullYear(), base.getMonth() + months, 1)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(base.getDate(), lastDay))
+  return purchaseDate.format(target)
+}
+
+/** Expand the penalty of one installment into one row per late month. */
+function buildPenaltyMonths(line: LedgerLine): PenaltyMonth[] {
+  const breakdown = Array.isArray(line.payment_breakdown) ? (line.payment_breakdown as BreakdownLine[]) : []
+  const dueDate = textOf(line.due_date)
+  const rows: Omit<PenaltyMonth, "paid" | "status">[] = []
+
+  // 1) Months already penalized when a payment was posted
+  for (const item of breakdown) {
+    const count = Number(item.new_months) || 0
+    if (count <= 0) continue
+    const lastMonth = Number(item.months_late) || 0
+    const perMonth = Number(item.penalty_per_month) || 0
+    for (let k = 0; k < count; k++) {
+      const month = lastMonth - count + 1 + k
+      rows.push({
+        month,
+        completedOn: addMonthsLabel(dueDate, month),
+        amount: perMonth,
+        source: `Charged on payment ${formatDate(textOf(item.date))}`,
+      })
+    }
+  }
+
+  // 2) Months still accruing as of today (unpaid part)
+  const extraMonths = Number(line.extra_months) || 0
+  const lateToday = Number(line.months_late_today) || 0
+  const perMonthToday = Number(line.penalty_per_month) || 0
+  for (let k = 0; k < extraMonths; k++) {
+    const month = lateToday - extraMonths + 1 + k
+    rows.push({
+      month,
+      completedOn: addMonthsLabel(dueDate, month),
+      amount: perMonthToday,
+      source: "Accruing as of today",
+    })
+  }
+
+  // 3) Penalty paid is applied to the oldest month first
+  let remaining = Number(line.penalty_paid) || 0
+  return rows.map((row) => {
+    const paid = Math.min(remaining, row.amount)
+    remaining -= paid
+    const status: PenaltyMonth["status"] =
+      paid >= row.amount - 0.005 ? "Paid" : paid > 0 ? "Partially paid" : "Unpaid"
+    return { ...row, paid, status }
+  })
+}
+
+const penaltyStatusClass: Record<PenaltyMonth["status"], string> = {
+  Paid: "bg-green-100 text-green-800",
+  "Partially paid": "bg-amber-100 text-amber-800",
+  Unpaid: "bg-red-100 text-red-800",
+}
+
+/** Penalty details: one row per late month with amount and status. */
+function PenaltyBreakdown({ line }: { line: LedgerLine }) {
+  const months = buildPenaltyMonths(line)
+  const penalty = Number(line.penalty) || 0
+  const paid = Number(line.penalty_paid) || 0
+  const balance = Math.max(0, penalty - paid)
+  const listed = months.reduce((sum, row) => sum + row.amount, 0)
+  const difference = penalty - listed
+  const status: PenaltyMonth["status"] =
+    balance <= 0.005 ? "Paid" : paid > 0 ? "Partially paid" : "Unpaid"
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="cursor-pointer text-left underline decoration-dotted underline-offset-4 hover:text-blue-700"
+          aria-label="Show penalty details"
+        >
+          {money(line.penalty)}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Penalty · Installment #{textOf(line.installment_number)}</DialogTitle>
+          <DialogDescription>
+            Due {formatDate(textOf(line.due_date))} · 4% of unpaid per late month (rounded up)
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[60vh] pr-3">
+          <div className="flex flex-col gap-3 text-sm">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Month</TableHead>
+                  <TableHead className="text-right text-xs">Amount</TableHead>
+                  <TableHead className="text-right text-xs">Paid</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {months.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-xs text-muted-foreground">
+                      No penalty charged yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  months.map((row, index) => (
+                    <TableRow key={`${row.month}-${index}`}>
+                      <TableCell className="text-xs">
+                        <p className="font-medium">Month {row.month} · {row.completedOn}</p>
+                        <p className="text-muted-foreground">{row.source}</p>
+                      </TableCell>
+                      <TableCell className="text-right text-xs">{money(row.amount)}</TableCell>
+                      <TableCell className="text-right text-xs">{money(row.paid)}</TableCell>
+                      <TableCell className="text-xs">
+                        <span className={`inline-block rounded-full px-2 py-0.5 font-medium ${penaltyStatusClass[row.status]}`}>
+                          {row.status}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+                {Math.abs(difference) > 0.01 ? (
+                  <TableRow>
+                    <TableCell className="text-xs text-muted-foreground">Other adjustments</TableCell>
+                    <TableCell className="text-right text-xs">{money(difference)}</TableCell>
+                    <TableCell />
+                    <TableCell />
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+
+            <div className="flex flex-col gap-1 border-t pt-2">
+              <div className="flex justify-between"><span>Total penalty</span><span>{money(penalty)}</span></div>
+              <div className="flex justify-between"><span>Penalty paid</span><span>{money(paid)}</span></div>
+              <div className="flex justify-between font-semibold">
+                <span>Penalty balance</span><span>{money(balance)}</span>
+              </div>
+            </div>
           </div>
         </ScrollArea>
       </DialogContent>
@@ -596,23 +753,14 @@ function readAccount(payload: unknown) {
   const monthlyInstallment = textOf(account.monthly_installment)
   const monthlyPrincipal = textOf(account.monthly_principal)
   const monthlyInterest = textOf(account.monthly_interest)
-  const rebated =
-    Number(rebateAmount) > 0 ||
-    account.is_rebated === true ||
-    account.is_rebated === 1 ||
-    textOf(account.is_rebated).toLowerCase() === "yes"
-      ? "Yes"
-      : "No"
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
     )
     const summary = paid
       ? `Principal ${money(line.monthly_principal_paid)} · Interest ${money(line.monthly_interest_paid)} · Penalty ${money(line.penalty_paid)}`
-      : Number(line.penalty) > 0
-        ? ""
-        : ""
-    // Tooltip with the detailed calculation (also for rows that only have a running penalty)
+      : ""
+    // Modal with the detailed calculation
     const breakdown: ReactNode = summary ? <PaymentBreakdown line={line} summary={summary} /> : ""
     return [
       textOf(line.installment_number),
@@ -622,7 +770,7 @@ function readAccount(payload: unknown) {
       money(monthlyInstallment),
       money(line.monthly_installment_paid),
       money(line.rebate),
-      money(line.penalty),
+      Number(line.penalty) > 0 ? <PenaltyBreakdown line={line} /> : money(line.penalty),
       money(line.penalty_paid),
       money(monthlyPrincipal),
       money(line.monthly_principal_paid),
