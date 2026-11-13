@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
-import { BookOpen, ChevronDown, ChevronRight, Receipt, Search, UserRound, type LucideIcon } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronRight, Receipt, RefreshCw, Search, UserRound, type LucideIcon } from "lucide-react"
 
 import { CustomerSetupForm } from "@/components/customer-setup-form"
 import { type LedgerCustomer } from "@/components/ledger-customers"
@@ -159,7 +159,10 @@ function LoanLedgerSummary({
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-blue-200">
       <div className="bg-blue-800 px-4 py-2 text-white sm:px-5 sm:py-4">
-        <h2 className="text-sm font-semibold tracking-tight sm:text-base">{customer.customerName}</h2>
+        <p className="text-[11px] font-medium tracking-wide text-blue-100 uppercase">{title}</p>
+        <h2 className="truncate text-sm font-semibold tracking-tight sm:text-base">
+          {customer.customerName}
+        </h2>
       </div>
       <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-5 sm:py-5 md:grid-cols-2 xl:grid-cols-4">
         {loanSummary(customer).map((column, columnIndex) => (
@@ -975,9 +978,16 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [payments, setPayments] = useState<string[][]>([])
   const [accountKey, setAccountKey] = useState(routeId)
   const [loading, setLoading] = useState(Boolean(routeId))
+  const [reloadKey, setReloadKey] = useState(0)
   const [error, setError] = useState("")
   const skipSearch = useRef(false)
   const tabLoadId = useRef(0)
+
+  function refreshLedger() {
+    if (!accountKey || loading) return
+    setLoading(true)
+    setReloadKey((key) => key + 1)
+  }
 
   function selectTab(next: AccountLedgerTab) {
     if (next === tab) return
@@ -1029,7 +1039,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
     return () => {
       cancelled = true
     }
-  }, [accountKey])
+  }, [accountKey, reloadKey])
 
   useEffect(() => {
     if (!searchable) return
@@ -1068,33 +1078,48 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   return (
     <section className="flex h-[calc(100svh-11.5rem)] min-h-0 flex-col gap-4 sm:h-[calc(100svh-12.5rem)]">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <div
-          role="tablist"
-          aria-label="Account ledger sections"
-          className="flex h-8 w-full flex-nowrap gap-0.5 overflow-x-auto rounded-lg border border-blue-200 bg-blue-50/70 p-[3px] sm:w-auto"
-        >
-          {tabs.map((item) => {
-            const selected = tab === item
-            const Icon = tabMeta[item].icon
-            return (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                title={tabMeta[item].hint}
-                className={
-                  selected
-                    ? "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-blue-800 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-white"
-                    : "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white"
-                }
-                onClick={() => selectTab(item)}
-              >
-                <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                <span>{item}</span>
-              </button>
-            )
-          })}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div
+            role="tablist"
+            aria-label="Account ledger sections"
+            className="flex h-8 w-full flex-nowrap gap-0.5 overflow-x-auto rounded-lg border border-blue-200 bg-blue-50/70 p-[3px] sm:w-auto"
+          >
+            {tabs.map((item) => {
+              const selected = tab === item
+              const Icon = tabMeta[item].icon
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  title={tabMeta[item].hint}
+                  className={
+                    selected
+                      ? "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-blue-800 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-white"
+                      : "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white"
+                  }
+                  onClick={() => selectTab(item)}
+                >
+                  <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                  <span>{item}</span>
+                </button>
+              )
+            })}
+          </div>
+          {tab === "Loan Ledger" && accountKey ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="action-hover h-8 shrink-0 bg-white px-3 text-blue-950 bg-blue-200"
+              disabled={loading}
+              onClick={refreshLedger}
+            >
+              <RefreshCw className={loading ? "animate-spin" : undefined} />
+              Refresh
+            </Button>
+          ) : null}
         </div>
         {searchable ? (
           <div className="relative w-full max-w-sm">
