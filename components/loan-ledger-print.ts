@@ -1,6 +1,7 @@
 import type { LedgerCustomer } from "@/components/ledger-customers"
 
 export type PrintAmortRow = {
+  installmentNo: string
   dueDate: string
   paymentDate: string
   paymentReference: string
@@ -91,8 +92,19 @@ export function buildPrintLedgerDoc(
   }
 }
 
+function padInstallmentNo(value: unknown) {
+  const text = textOf(value)
+  if (!text) return ""
+  const upper = text.toUpperCase()
+  if (upper === "DP" || upper === "DOWN PAYMENT") return "DP"
+  const digits = text.replace(/\D/g, "")
+  if (!digits) return text
+  return digits.padStart(3, "0")
+}
+
 export function buildPrintAmortRows(
   lines: Array<{
+    installment_number?: unknown
     due_date?: unknown
     payment_date?: unknown
     payment_ref?: unknown
@@ -120,6 +132,7 @@ export function buildPrintAmortRows(
         : printMoney(monthlyInstallment)
 
     return {
+      installmentNo: padInstallmentNo(line.installment_number),
       dueDate: printDate(textOf(line.due_date)),
       paymentDate:
         (paymentDates.length ? paymentDates : [printDate(textOf(line.payment_date))])
@@ -147,6 +160,7 @@ export function printLoanLedger(doc: PrintLedgerDoc) {
     .map(
       (row) => `
       <tr>
+        <td>${escapeHtml(row.installmentNo || "")}</td>
         <td>${escapeHtml(row.dueDate || "")}</td>
         <td class="wrap">${escapeHtml(row.paymentDate || "")}</td>
         <td class="wrap">${escapeHtml(row.paymentReference || "")}</td>
@@ -232,12 +246,13 @@ export function printLoanLedger(doc: PrintLedgerDoc) {
       border-collapse: collapse;
       table-layout: fixed;
     }
-    .ledger col.c-due { width: 9%; }
-    .ledger col.c-paid { width: 9%; }
-    .ledger col.c-ref { width: 16%; }
-    .ledger col.c-inst { width: 11%; }
-    .ledger col.c-pen { width: 9%; }
-    .ledger col.c-reb { width: 9%; }
+    .ledger col.c-no { width: 7%; }
+    .ledger col.c-due { width: 8%; }
+    .ledger col.c-paid { width: 8%; }
+    .ledger col.c-ref { width: 14%; }
+    .ledger col.c-inst { width: 10%; }
+    .ledger col.c-pen { width: 8%; }
+    .ledger col.c-reb { width: 8%; }
     .ledger col.c-bal1 { width: 18.5%; }
     .ledger col.c-bal2 { width: 18.5%; }
     .ledger th, .ledger td {
@@ -307,6 +322,7 @@ export function printLoanLedger(doc: PrintLedgerDoc) {
     <hr class="rule" />
     <table class="ledger">
       <colgroup>
+        <col class="c-no" />
         <col class="c-due" />
         <col class="c-paid" />
         <col class="c-ref" />
@@ -318,6 +334,7 @@ export function printLoanLedger(doc: PrintLedgerDoc) {
       </colgroup>
       <thead>
         <tr>
+          <th>Installment<br/>No.</th>
           <th>Due Date</th>
           <th>Payment Date</th>
           <th>Payment Reference</th>
@@ -329,7 +346,7 @@ export function printLoanLedger(doc: PrintLedgerDoc) {
         </tr>
       </thead>
       <tbody>
-        ${rowsHtml || `<tr><td colspan="8">No installment rows.</td></tr>`}
+        ${rowsHtml || `<tr><td colspan="9">No installment rows.</td></tr>`}
       </tbody>
     </table>
   </div>
