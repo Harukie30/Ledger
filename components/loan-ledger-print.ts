@@ -71,8 +71,10 @@ function termLabel(value: string) {
 export function buildPrintLedgerDoc(
   customer: LedgerCustomer,
   rows: PrintAmortRow[],
+  firstDueDate?: string,
 ): PrintLedgerDoc {
   const location = customer.location || ""
+  const dueFromRows = rows.find((row) => row.dueDate)?.dueDate || ""
   return {
     companyName: "DES Strong Motors, Inc.",
     formTitle: `Installment Inquiry Form - Amortization Ledger${location ? ` - ${location}` : ""}`,
@@ -81,7 +83,7 @@ export function buildPrintLedgerDoc(
     itemUnit: customer.itemUnit || "",
     itemClass: customer.itemClass || "",
     termMonths: termLabel(customer.termMonths || ""),
-    loanStartDate: printDate(customer.loanStartDate || customer.purchaseDate),
+    loanStartDate: printDate(firstDueDate || dueFromRows),
     originalLoanAmount: printMoney(customer.loanAmount),
     totalBalance: printMoney(customer.totalBalanceDue || customer.currentBalance),
     location,

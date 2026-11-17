@@ -887,6 +887,10 @@ function readAccount(payload: unknown) {
   const monthlyPrincipal = textOf(account.monthly_principal)
   const monthlyInterest = textOf(account.monthly_interest)
   const printRows = buildPrintAmortRows(lines, monthlyInstallment)
+  const firstDueDate =
+    textOf(account.first_due_date) ||
+    textOf(lines[0]?.due_date) ||
+    ""
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
@@ -933,7 +937,7 @@ function readAccount(payload: unknown) {
     textOf(payment.status),
     payment.isrebatable === true || payment.isrebatable === 1 ? "Yes" : "No",
   ])
-  return { id: textOf(account.id), customer, ledgerRows, payments, printRows }
+  return { id: textOf(account.id), customer, ledgerRows, payments, printRows, firstDueDate }
 }
 
 type AccountMatch = {
@@ -984,6 +988,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [ledgerRows, setLedgerRows] = useState<ReactNode[][]>([])
   const [payments, setPayments] = useState<string[][]>([])
   const [printRows, setPrintRows] = useState<PrintAmortRow[]>([])
+  const [firstDueDate, setFirstDueDate] = useState("")
   const [accountKey, setAccountKey] = useState(routeId)
   const [loading, setLoading] = useState(Boolean(routeId))
   const [printing, setPrinting] = useState(false)
@@ -1014,7 +1019,8 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
       setLedgerRows(next.ledgerRows)
       setPayments(next.payments)
       setPrintRows(next.printRows)
-      const doc = buildPrintLedgerDoc(next.customer, next.printRows)
+      setFirstDueDate(next.firstDueDate)
+      const doc = buildPrintLedgerDoc(next.customer, next.printRows, next.firstDueDate)
       const opened = printLoanLedger(doc)
       if (!opened) {
         setPrintNotice("Allow pop-ups to print the loan ledger.")
@@ -1056,12 +1062,14 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
             setLedgerRows([])
             setPayments([])
             setPrintRows([])
+            setFirstDueDate("")
             setError("Account not found.")
           } else {
             setSelected(next.customer)
             setLedgerRows(next.ledgerRows)
             setPayments(next.payments)
             setPrintRows(next.printRows)
+            setFirstDueDate(next.firstDueDate)
           }
         }
       } catch (loadError) {
@@ -1070,6 +1078,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
           setLedgerRows([])
           setPayments([])
           setPrintRows([])
+          setFirstDueDate("")
           setError(toApiErrorMessage(loadError, "That account could not be loaded."))
         }
       } finally {
