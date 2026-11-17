@@ -11,7 +11,6 @@ import {
   buildPrintLedgerDoc,
   printLoanLedger,
   type PrintAmortRow,
-  type PrintLedgerDoc,
 } from "@/components/loan-ledger-print"
 import { apiService, toApiErrorMessage } from "@/lib/apiService"
 import { LoadingState } from "@/components/loading-state"
@@ -888,21 +887,6 @@ function readAccount(payload: unknown) {
   const monthlyPrincipal = textOf(account.monthly_principal)
   const monthlyInterest = textOf(account.monthly_interest)
   const printRows = buildPrintAmortRows(lines, monthlyInstallment)
-  const printExtras = {
-    branch: locationName,
-    contactNum: textOf(account.contact_num) || textOf(account.contact_no) || textOf(account.contact),
-    billingAddress:
-      textOf(account.billing_address) ||
-      textOf(account.address) ||
-      textOf(account.customer_address),
-    engineNum: textOf(account.engine_num) || textOf(account.engine_number) || textOf(account.engine),
-    chassisNum:
-      textOf(account.chassis_num) || textOf(account.chassis_number) || textOf(account.chassis),
-    productDesc: itemUnit || itemClass,
-    productCode: textOf(account.product_code) || textOf(account.item_code),
-    salesAgent: textOf(account.sales_agent) || textOf(account.agent),
-    paymentType: textOf(account.payment_type),
-  }
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
@@ -949,7 +933,7 @@ function readAccount(payload: unknown) {
     textOf(payment.status),
     payment.isrebatable === true || payment.isrebatable === 1 ? "Yes" : "No",
   ])
-  return { id: textOf(account.id), customer, ledgerRows, payments, printRows, printExtras }
+  return { id: textOf(account.id), customer, ledgerRows, payments, printRows }
 }
 
 type AccountMatch = {
@@ -1000,7 +984,6 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [ledgerRows, setLedgerRows] = useState<ReactNode[][]>([])
   const [payments, setPayments] = useState<string[][]>([])
   const [printRows, setPrintRows] = useState<PrintAmortRow[]>([])
-  const [printExtras, setPrintExtras] = useState<Partial<PrintLedgerDoc>>({})
   const [accountKey, setAccountKey] = useState(routeId)
   const [loading, setLoading] = useState(Boolean(routeId))
   const [printing, setPrinting] = useState(false)
@@ -1031,8 +1014,7 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
       setLedgerRows(next.ledgerRows)
       setPayments(next.payments)
       setPrintRows(next.printRows)
-      setPrintExtras(next.printExtras)
-      const doc = buildPrintLedgerDoc(next.customer, next.printRows, next.printExtras)
+      const doc = buildPrintLedgerDoc(next.customer, next.printRows)
       const opened = printLoanLedger(doc)
       if (!opened) {
         setPrintNotice("Allow pop-ups to print the loan ledger.")
@@ -1074,14 +1056,12 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
             setLedgerRows([])
             setPayments([])
             setPrintRows([])
-            setPrintExtras({})
             setError("Account not found.")
           } else {
             setSelected(next.customer)
             setLedgerRows(next.ledgerRows)
             setPayments(next.payments)
             setPrintRows(next.printRows)
-            setPrintExtras(next.printExtras)
           }
         }
       } catch (loadError) {
@@ -1090,7 +1070,6 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
           setLedgerRows([])
           setPayments([])
           setPrintRows([])
-          setPrintExtras({})
           setError(toApiErrorMessage(loadError, "That account could not be loaded."))
         }
       } finally {
