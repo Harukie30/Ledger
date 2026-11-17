@@ -2,10 +2,17 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
-import { BookOpen, ChevronDown, ChevronRight, Receipt, RefreshCw, Search, UserRound, type LucideIcon } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronRight, Printer, Receipt, RefreshCw, Search, UserRound, type LucideIcon } from "lucide-react"
 
 import { CustomerSetupForm } from "@/components/customer-setup-form"
 import { type LedgerCustomer } from "@/components/ledger-customers"
+import {
+  buildPrintAmortRows,
+  buildPrintLedgerDoc,
+  printLoanLedger,
+  type PrintAmortRow,
+  type PrintLedgerDoc,
+} from "@/components/loan-ledger-print"
 import { apiService, toApiErrorMessage } from "@/lib/apiService"
 import { LoadingState } from "@/components/loading-state"
 import { TableEmpty } from "@/components/table-empty"
@@ -880,6 +887,22 @@ function readAccount(payload: unknown) {
   const monthlyInstallment = textOf(account.monthly_installment)
   const monthlyPrincipal = textOf(account.monthly_principal)
   const monthlyInterest = textOf(account.monthly_interest)
+  const printRows = buildPrintAmortRows(lines, monthlyInstallment)
+  const printExtras = {
+    branch: locationName,
+    contactNum: textOf(account.contact_num) || textOf(account.contact_no) || textOf(account.contact),
+    billingAddress:
+      textOf(account.billing_address) ||
+      textOf(account.address) ||
+      textOf(account.customer_address),
+    engineNum: textOf(account.engine_num) || textOf(account.engine_number) || textOf(account.engine),
+    chassisNum:
+      textOf(account.chassis_num) || textOf(account.chassis_number) || textOf(account.chassis),
+    productDesc: itemUnit || itemClass,
+    productCode: textOf(account.product_code) || textOf(account.item_code),
+    salesAgent: textOf(account.sales_agent) || textOf(account.agent),
+    paymentType: textOf(account.payment_type),
+  }
   const ledgerRows = lines.map((line) => {
     const paid = [line.monthly_principal_paid, line.monthly_interest_paid, line.penalty_paid].some(
       (value) => Number(value) > 0,
@@ -926,7 +949,7 @@ function readAccount(payload: unknown) {
     textOf(payment.status),
     payment.isrebatable === true || payment.isrebatable === 1 ? "Yes" : "No",
   ])
-  return { id: textOf(account.id), customer, ledgerRows, payments }
+  return { id: textOf(account.id), customer, ledgerRows, payments, printRows, printExtras }
 }
 
 type AccountMatch = {
@@ -976,8 +999,12 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [selected, setSelected] = useState<LedgerCustomer | null>(null)
   const [ledgerRows, setLedgerRows] = useState<ReactNode[][]>([])
   const [payments, setPayments] = useState<string[][]>([])
+  const [printRows, setPrintRows] = useState<PrintAmortRow[]>([])
+  const [printExtras, setPrintExtras] = useState<Partial<PrintLedgerDoc>>({})
   const [accountKey, setAccountKey] = useState(routeId)
   const [loading, setLoading] = useState(Boolean(routeId))
+  const [printing, setPrinting] = useState(false)
+  const [printNotice, setPrintNotice] = useState("")
   const [reloadKey, setReloadKey] = useState(0)
   const [error, setError] = useState("")
   const skipSearch = useRef(false)
@@ -987,6 +1014,36 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
     if (!accountKey || loading) return
     setLoading(true)
     setReloadKey((key) => key + 1)
+  }
+
+  async function handlePrintLedger() {
+    if (!accountKey || printing) return
+    setPrinting(true)
+    setPrintNotice("")
+    try {
+      const data = await apiService.getLedger(accountKey)
+      const next = readAccount(data)
+      if (!next) {
+        setPrintNotice("Account not found.")
+        return
+      }
+      setSelected(next.customer)
+      setLedgerRows(next.ledgerRows)
+      setPayments(next.payments)
+      setPrintRows(next.printRows)
+      setPrintExtras(next.printExtras)
+      const doc = buildPrintLedgerDoc(next.customer, next.printRows, next.printExtras)
+      const opened = printLoanLedger(doc)
+      if (!opened) {
+        setPrintNotice("Allow pop-ups to print the loan ledger.")
+      }
+    } catch (printError) {
+      setPrintNotice(
+        toApiErrorMessage(printError, "The loan ledger could not be loaded for printing."),
+      )
+    } finally {
+      setPrinting(false)
+    }
   }
 
   function selectTab(next: AccountLedgerTab) {
@@ -1016,11 +1073,15 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
             setSelected(null)
             setLedgerRows([])
             setPayments([])
+            setPrintRows([])
+            setPrintExtras({})
             setError("Account not found.")
           } else {
             setSelected(next.customer)
             setLedgerRows(next.ledgerRows)
             setPayments(next.payments)
+            setPrintRows(next.printRows)
+            setPrintExtras(next.printExtras)
           }
         }
       } catch (loadError) {
@@ -1028,6 +1089,8 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
           setSelected(null)
           setLedgerRows([])
           setPayments([])
+          setPrintRows([])
+          setPrintExtras({})
           setError(toApiErrorMessage(loadError, "That account could not be loaded."))
         }
       } finally {
@@ -1108,17 +1171,35 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
             })}
           </div>
           {tab === "Loan Ledger" && accountKey ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="action-hover h-8 shrink-0 bg-white px-3 text-blue-950 bg-blue-200"
-              disabled={loading}
-              onClick={refreshLedger}
-            >
-              <RefreshCw className={loading ? "animate-spin" : undefined} />
-              Refresh
-            </Button>
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="action-hover h-8 shrink-0 bg-blue-200 px-3 text-blue-950"
+                disabled={loading}
+                onClick={refreshLedger}
+              >
+                <RefreshCw className={loading ? "animate-spin" : undefined} />
+                Refresh
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="action-hover h-8 shrink-0 bg-white px-3 text-blue-950"
+                disabled={loading || printing || !accountKey}
+                onClick={() => {
+                  void handlePrintLedger()
+                }}
+              >
+                <Printer className={printing ? "animate-pulse" : undefined} />
+                {printing ? "Preparing" : "Print"}
+              </Button>
+              {printNotice ? (
+                <p className="w-full text-xs text-red-700 sm:w-auto">{printNotice}</p>
+              ) : null}
+            </>
           ) : null}
         </div>
         {searchable ? (
