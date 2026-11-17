@@ -1129,35 +1129,46 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   return (
     <section className="flex h-[calc(100svh-11.5rem)] min-h-0 flex-col gap-4 sm:h-[calc(100svh-12.5rem)]">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div
-            role="tablist"
-            aria-label="Account ledger sections"
-            className="flex h-8 w-full flex-nowrap gap-0.5 overflow-x-auto rounded-lg border border-blue-200 bg-blue-50/70 p-[3px] sm:w-auto"
-          >
-            {tabs.map((item) => {
-              const selected = tab === item
-              const Icon = tabMeta[item].icon
-              return (
-                <button
-                  key={item}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  title={tabMeta[item].hint}
-                  className={
-                    selected
-                      ? "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-blue-800 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-white"
-                      : "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white"
-                  }
-                  onClick={() => selectTab(item)}
-                >
-                  <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                  <span>{item}</span>
-                </button>
-              )
-            })}
-          </div>
+        <div
+          role="tablist"
+          aria-label="Account ledger sections"
+          className="flex h-8 min-w-0 flex-nowrap gap-0.5 overflow-x-auto rounded-lg border border-blue-200 bg-blue-50/70 p-[3px] sm:w-auto"
+        >
+          {tabs.map((item) => {
+            const selected = tab === item
+            const Icon = tabMeta[item].icon
+            return (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                title={tabMeta[item].hint}
+                className={
+                  selected
+                    ? "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-blue-800 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-white"
+                    : "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-blue-800 hover:bg-white"
+                }
+                onClick={() => selectTab(item)}
+              >
+                <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                <span>{item}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {searchable ? (
+            <div className="relative w-full max-w-sm sm:w-72">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by customer name, customer ID, or sales order"
+                className="h-8 bg-white pl-9 text-sm"
+              />
+            </div>
+          ) : null}
           {tab === "Loan Ledger" && accountKey ? (
             <>
               <Button
@@ -1185,22 +1196,11 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
                 {printing ? "Preparing" : "Print"}
               </Button>
               {printNotice ? (
-                <p className="w-full text-xs text-red-700 sm:w-auto">{printNotice}</p>
+                <p className="w-full text-right text-xs text-red-700 sm:w-auto">{printNotice}</p>
               ) : null}
             </>
           ) : null}
         </div>
-        {searchable ? (
-          <div className="relative w-full max-w-sm">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by customer name, customer ID, or sales order"
-              className="h-8 bg-white pl-9 text-sm"
-            />
-          </div>
-        ) : null}
       </div>
       <div className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden">
       <div role="tabpanel" className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
