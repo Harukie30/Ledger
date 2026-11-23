@@ -15,8 +15,10 @@ function toAmount(value: string) {
 
 export function CustomerSetupForm({
   customer = ledgerCustomers[0],
+  branchView = false,
 }: {
   customer?: LedgerCustomer
+  branchView?: boolean
 }) {
   const monthlyPrincipal =
     toAmount(customer.termMonths) > 0
@@ -90,9 +92,13 @@ export function CustomerSetupForm({
               value={customer.financedAmount}
             />
           </Section>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Figure label="Monthly principal" value={peso.format(monthlyPrincipal)} />
-            <Figure label="Monthly interest" value={peso.format(monthlyInterest)} />
+          <div className={`grid gap-3 ${branchView ? "sm:grid-cols-1" : "sm:grid-cols-3"}`}>
+            {branchView ? null : (
+              <>
+                <Figure label="Monthly principal" value={peso.format(monthlyPrincipal)} />
+                <Figure label="Monthly interest" value={peso.format(monthlyInterest)} />
+              </>
+            )}
             <Figure label="Monthly installment" value={peso.format(monthlyInstallment)} />
           </div>
         </div>

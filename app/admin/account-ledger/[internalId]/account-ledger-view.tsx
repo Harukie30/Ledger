@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
-import { useParams } from "next/navigation"
+import { useParams, usePathname } from "next/navigation"
 import { BookOpen, ChevronDown, ChevronRight, Printer, Receipt, RefreshCw, Search, UserRound, type LucideIcon } from "lucide-react"
 
 import { CustomerSetupForm } from "@/components/customer-setup-form"
@@ -63,7 +63,47 @@ const loanLedgerColumns = [
   "Running balance without penalty",
   "Running balance with penalty",
   "Payment breakdown",
-]
+] as const
+
+/** Hidden on viewer / employee (branch) loan ledger. */
+const branchExcludedLedgerColumns = new Set([
+  "Monthly principal",
+  "Monthly principal paid",
+  "Monthly interest",
+  "Monthly interest paid",
+  "Payment breakdown",
+])
+
+const branchExcludedSummaryLabels = new Set([
+  "Monthly principal",
+  "Monthly interest",
+  "Unrecovered cost",
+])
+
+function visibleLoanLedgerColumns(branchView: boolean) {
+  if (!branchView) return loanLedgerColumns
+  return loanLedgerColumns.filter((column) => !branchExcludedLedgerColumns.has(column))
+}
+
+function filterLedgerRows(
+  rows: ReactNode[][],
+  fullColumns: readonly string[],
+  visibleColumns: readonly string[],
+) {
+  if (visibleColumns.length === fullColumns.length) return rows
+  const keepIndexes = visibleColumns.map((column) => fullColumns.indexOf(column))
+  return rows.map((row) => {
+    const cells = keepIndexes.map((index) => row[index])
+    const extra = row[fullColumns.length]
+    if (Array.isArray(extra)) {
+      const subRows = (extra as ReactNode[][]).map((subRow) =>
+        keepIndexes.map((index) => subRow[index]),
+      )
+      return [...cells, subRows]
+    }
+    return extra !== undefined ? [...cells, extra] : cells
+  })
+}
 
 const paymentHistoryColumns = [
   "Payment date",
@@ -114,7 +154,7 @@ const peso = new Intl.NumberFormat("en-PH", {
   minimumFractionDigits: 2,
 })
 
-function loanSummary(customer: LedgerCustomer) {
+function loanSummary(customer: LedgerCustomer, branchView = false) {
   const principal =
     Number(customer.termMonths) > 0
       ? Number(customer.financedAmount) / Number(customer.termMonths)
@@ -123,7 +163,7 @@ function loanSummary(customer: LedgerCustomer) {
     customer.rebateAmount !== "" && Number.isFinite(Number(customer.rebateAmount))
       ? peso.format(Number(customer.rebateAmount))
       : customer.rebateAmount
-  return [
+  const columns = [
     [
       ["Date of purchase", customer.loanStartLabel || customer.purchaseDate],
       ["Location", customer.location],
@@ -153,14 +193,20 @@ function loanSummary(customer: LedgerCustomer) {
       ["Unrecovered cost", peso.format(customer.unrecoveredCost)],
     ],
   ]
+  if (!branchView) return columns
+  return columns
+    .map((column) => column.filter(([label]) => !branchExcludedSummaryLabels.has(label)))
+    .filter((column) => column.length > 0)
 }
 
 function LoanLedgerSummary({
   title,
   customer,
+  branchView = false,
 }: {
   title: string
   customer: LedgerCustomer
+  branchView?: boolean
 }) {
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-blue-200">
@@ -171,7 +217,7 @@ function LoanLedgerSummary({
         </h2>
       </div>
       <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-5 sm:py-5 md:grid-cols-2 xl:grid-cols-4">
-        {loanSummary(customer).map((column, columnIndex) => (
+        {loanSummary(customer, branchView).map((column, columnIndex) => (
           <dl key={`loan-summary-${columnIndex}`} className="flex min-w-0 flex-col gap-3">
             {column.map(([label, value], fieldIndex) => (
               <div
@@ -304,12 +350,14 @@ function LedgerPanel({
   columns,
   rows,
   empty,
+  branchView = false,
 }: {
   title: string
   customer: LedgerCustomer
   columns: readonly string[]
   rows: ReactNode[][]
   empty: string
+  branchView?: boolean
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [narrow, setNarrow] = useState(false)
@@ -346,7 +394,7 @@ function LedgerPanel({
       className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto"
     >
       <div className="w-full min-w-0 shrink-0">
-        <LoanLedgerSummary title={title} customer={customer} />
+        <LoanLedgerSummary title={title} customer={customer} branchView={branchView} />
       </div>
       {narrow ? (
         <>
@@ -977,6 +1025,8 @@ const resultColumns = ["Internal ID", "Customer name", "Date of purchase", "Sale
 
 export function AccountLedgerView({ searchable = false }: { searchable?: boolean }) {
   const params = useParams<{ internalId?: string }>()
+  const pathname = usePathname()
+  const branchView = pathname.startsWith("/viewer")
   const routeId = typeof params.internalId === "string" ? decodeURIComponent(params.internalId) : ""
   const [tab, setTab] = useState<AccountLedgerTab>(tabs[0])
   const [tabLoading, setTabLoading] = useState(false)
@@ -997,6 +1047,8 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
   const [error, setError] = useState("")
   const skipSearch = useRef(false)
   const tabLoadId = useRef(0)
+  const ledgerColumns = visibleLoanLedgerColumns(branchView)
+  const visibleLedgerRows = filterLedgerRows(ledgerRows, loanLedgerColumns, ledgerColumns)
 
   function refreshLedger() {
     if (!accountKey || loading) return
@@ -1217,14 +1269,15 @@ export function AccountLedgerView({ searchable = false }: { searchable?: boolean
             <TableEmpty label={error || "Search for an account."} />
           </div>
         ) : tab === "Customer set-up" ? (
-          <CustomerSetupForm customer={selected} />
+          <CustomerSetupForm customer={selected} branchView={branchView} />
         ) : tab === "Loan Ledger" ? (
           <LedgerPanel
             title="Per customer loan ledger"
             customer={selected}
-            columns={loanLedgerColumns}
-            rows={ledgerRows}
+            columns={ledgerColumns}
+            rows={visibleLedgerRows}
             empty="No installments are listed yet."
+            branchView={branchView}
           />
         ) : tab === "Payment history" ? (
           <RecordTable columns={paymentHistoryColumns} rows={payments} empty="No payments are listed yet." />
