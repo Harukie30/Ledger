@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -85,30 +84,6 @@ export type ViewPayment = {
   voidReason?: string
   edited?: boolean
   remarks: PaymentRemark[]
-}
-
-function VoidReasonField({ payment }: { payment: ViewPayment }) {
-  const remark = payment.remarks.find((item) => item.action === "voided")
-  const stored = payment.voidReason || remark?.detail || ""
-  const stamped = splitRemarkDateTime(stored)
-  const at = stamped.at || remark?.at || ""
-  const value = stored
-    ? stamped.at || !at
-      ? stored
-      : `${stamped.reason || stored} — ${at}`
-    : at || "—"
-
-  return (
-    <label className="flex flex-col gap-1.5 sm:col-span-2">
-      <span className="text-sm font-semibold text-red-800">Void reason</span>
-      <Textarea
-        readOnly
-        tabIndex={-1}
-        value={value}
-        className="min-h-20 cursor-default resize-none bg-red-50/70 text-blue-950 shadow-none focus-visible:ring-0"
-      />
-    </label>
-  )
 }
 
 function ReadField({
@@ -227,9 +202,6 @@ export function ViewPaymentModal({
                     value={payment?.location || "—"}
                     className="flex flex-col gap-1.5 sm:col-span-2"
                   />
-                  {payment?.voided ? (
-                    <VoidReasonField payment={payment} />
-                  ) : null}
                 </div>
                 <div className="mt-5 overflow-hidden rounded-xl bg-white/90 shadow-md ring-1 ring-blue-200">
                   <div className="border-b border-blue-100 bg-blue-50 px-4 py-3">
