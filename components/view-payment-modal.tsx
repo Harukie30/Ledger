@@ -27,6 +27,45 @@ export type PaymentRemark = {
   detail?: string
 }
 
+export const remarkDateTime = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+})
+
+const remarkStamp = / — ([A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M)$/
+
+/** Remark or void reason plus the date and time stored on the payload. */
+export function withRemarkDateTime(reason: string, when = new Date()) {
+  const text = reason.trim()
+  if (!text || remarkStamp.test(text)) return text
+  return `${text} — ${remarkDateTime.format(when)}`
+}
+
+export function splitRemarkDateTime(value: string) {
+  const match = value.match(remarkStamp)
+  if (!match || match.index == null) return { reason: value.trim(), at: "" }
+  return { reason: value.slice(0, match.index).trim(), at: match[1] }
+}
+
+/** Keep a payload timestamp's time. Date-only values stay date-only. */
+export function formatPayloadDateTime(value: string) {
+  const text = value.trim()
+  if (!text || !/^\d{4}-\d{2}-\d{2}/.test(text)) return text
+  const hasTime = /[T ]\d{2}:\d{2}/.test(text)
+  const normalized = text.includes(" ") ? text.replace(" ", "T") : text
+  const date = new Date(hasTime ? normalized : `${text.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return text
+  const dateOnly = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+  return hasTime ? remarkDateTime.format(date) : dateOnly.format(date)
+}
+
 export type ViewPayment = {
   id: string
   documentNumber: string
@@ -46,6 +85,30 @@ export type ViewPayment = {
   voidReason?: string
   edited?: boolean
   remarks: PaymentRemark[]
+}
+
+function VoidReasonField({ payment }: { payment: ViewPayment }) {
+  const remark = payment.remarks.find((item) => item.action === "voided")
+  const stored = payment.voidReason || remark?.detail || ""
+  const stamped = splitRemarkDateTime(stored)
+  const at = stamped.at || remark?.at || ""
+  const value = stored
+    ? stamped.at || !at
+      ? stored
+      : `${stamped.reason || stored} — ${at}`
+    : at || "—"
+
+  return (
+    <label className="flex flex-col gap-1.5 sm:col-span-2">
+      <span className="text-sm font-semibold text-red-800">Void reason</span>
+      <Textarea
+        readOnly
+        tabIndex={-1}
+        value={value}
+        className="min-h-20 cursor-default resize-none bg-red-50/70 text-blue-950 shadow-none focus-visible:ring-0"
+      />
+    </label>
+  )
 }
 
 function ReadField({
@@ -165,19 +228,7 @@ export function ViewPaymentModal({
                     className="flex flex-col gap-1.5 sm:col-span-2"
                   />
                   {payment?.voided ? (
-                    <label className="flex flex-col gap-1.5 sm:col-span-2">
-                      <span className="text-sm font-semibold text-red-800">Void reason</span>
-                      <Textarea
-                        readOnly
-                        tabIndex={-1}
-                        value={
-                          payment.voidReason ||
-                          payment.remarks.find((remark) => remark.action === "voided")?.detail ||
-                          "—"
-                        }
-                        className="min-h-20 cursor-default resize-none bg-red-50/70 text-blue-950 shadow-none focus-visible:ring-0"
-                      />
-                    </label>
+                    <VoidReasonField payment={payment} />
                   ) : null}
                 </div>
                 <div className="mt-5 overflow-hidden rounded-xl bg-white/90 shadow-md ring-1 ring-blue-200">
@@ -189,7 +240,14 @@ export function ViewPaymentModal({
                   </div>
                   {payment && payment.remarks.length > 0 ? (
                     <ul className="divide-y divide-blue-100">
-                      {payment.remarks.map((remark) => (
+                      {payment.remarks.map((remark) => {
+                        const stamped = splitRemarkDateTime(remark.detail || "")
+                        const when =
+                          (remark.at && /\d{1,2}:\d{2}/.test(remark.at) ? remark.at : "") ||
+                          stamped.at ||
+                          remark.at
+                        const detail = stamped.at ? stamped.reason : remark.detail
+                        return (
                         <li
                           key={remark.id}
                           className={
@@ -209,13 +267,16 @@ export function ViewPaymentModal({
                               {remark.action === "voided" ? "Voided" : "Edited"}
                             </span>
                             <span className="text-sm font-medium text-blue-950">{remark.by}</span>
-                            <span className="text-xs text-muted-foreground">{remark.at}</span>
+                            {when ? (
+                              <span className="text-xs text-muted-foreground">{when}</span>
+                            ) : null}
                           </div>
-                          {remark.detail ? (
-                            <p className="mt-1.5 text-sm leading-5 text-blue-950/80">{remark.detail}</p>
+                          {detail ? (
+                            <p className="mt-1.5 text-sm leading-5 text-blue-950/80">{detail}</p>
                           ) : null}
                         </li>
-                      ))}
+                        )
+                      })}
                     </ul>
                   ) : (
                     <p className="px-4 py-6 text-center text-sm text-muted-foreground">

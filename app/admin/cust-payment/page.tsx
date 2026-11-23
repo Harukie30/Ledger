@@ -7,7 +7,7 @@ import { LoadingState } from "@/components/loading-state"
 import { ErrorModal, SuccessModal } from "@/components/status-modals"
 import { TableEmpty } from "@/components/table-empty"
 import { EditPaymentModal } from "@/components/edit-payment-modal"
-import { ViewPaymentModal, type PaymentRemark, type ViewPayment } from "@/components/view-payment-modal"
+import { ViewPaymentModal, formatPayloadDateTime, splitRemarkDateTime, withRemarkDateTime, type PaymentRemark, type ViewPayment } from "@/components/view-payment-modal"
 import { VoidPaymentModal } from "@/components/void-payment-modal"
 import { Button } from "@/components/ui/button"
 import {
@@ -132,16 +132,17 @@ function relationId(value: unknown, fallback?: unknown) {
   return idOf(fallback)
 }
 
-function readRemarks(value: unknown, editedBy?: string): PaymentRemark[] {
+function readRemarks(value: unknown, editedBy?: string, voided = false): PaymentRemark[] {
   if (typeof value === "string") {
     const detail = value.trim()
     if (!detail) return []
+    const stamped = splitRemarkDateTime(detail)
     return [
       {
-        id: "edit-remark",
-        action: "edited",
+        id: voided ? "void-remark" : "edit-remark",
+        action: voided ? "voided" : "edited",
         by: editedBy || "Admin",
-        at: "",
+        at: stamped.at,
         detail,
       },
     ]
@@ -154,13 +155,15 @@ function readRemarks(value: unknown, editedBy?: string): PaymentRemark[] {
     const action = actionText === "voided" ? "voided" : actionText === "edited" ? "edited" : null
     if (!action) return []
     const atRaw = textOf(row.at) || textOf(row.created_at) || textOf(row.updated_at)
+    const detail = textOf(row.detail) || textOf(row.reason) || textOf(row.message) || undefined
+    const stamped = splitRemarkDateTime(detail || "")
     return [
       {
         id: textOf(row.id) || `remark-${index}`,
         action,
         by: textOf(row.by) || textOf(row.user_name) || textOf(row.user) || editedBy || "Admin",
-        at: atRaw ? formatDate(atRaw) || remarkWhen.format(new Date(atRaw)) : "",
-        detail: textOf(row.detail) || textOf(row.reason) || textOf(row.message) || undefined,
+        at: atRaw ? formatPayloadDateTime(atRaw) : stamped.at,
+        detail,
       },
     ]
   })
@@ -193,10 +196,49 @@ function readPayment(item: unknown): PaymentRow | null {
   const dateRaw = textOf(row.payment_date) || textOf(row.date)
   const editedByRecord =
     row.editedBy && typeof row.editedBy === "object"
-      ? (row.editedBy as { name?: unknown })
+      ? (row.editedBy as { name?: unknown; updated_at?: unknown })
       : null
   const editedByName = textOf(editedByRecord?.name)
-  const remarks = readRemarks(row.remarks, editedByName)
+  const voidReason =
+    textOf(row.reasonToVoid) ||
+    textOf(row.reason_to_void) ||
+    textOf(row.void_reason) ||
+    textOf(row.reason) ||
+    ""
+  const stampedAt = splitRemarkDateTime(voidReason).at
+  const voidedAtRaw = textOf(row.voided_at) || textOf(row.voidedAt)
+  const voidedAt =
+    stampedAt ||
+    (voidedAtRaw ? formatPayloadDateTime(voidedAtRaw) : "") ||
+    (voided ? formatPayloadDateTime(textOf(row.updated_at)) : "")
+  let remarks = readRemarks(row.remarks, editedByName, voided)
+  if (voided && !remarks.some((remark) => remark.action === "voided") && (voidReason || voidedAt)) {
+    remarks = [
+      {
+        id: `void-${id}`,
+        action: "voided",
+        by: editedByName || "Admin",
+        at: voidedAt,
+        detail: voidReason || undefined,
+      },
+      ...remarks,
+    ]
+  } else if (voidedAt) {
+    remarks = remarks.map((remark) =>
+      remark.action === "voided" && !remark.at ? { ...remark, at: voidedAt } : remark,
+    )
+  }
+  const editedAtRaw =
+    textOf(row.edited_at) ||
+    textOf(row.editedAt) ||
+    textOf(editedByRecord?.updated_at) ||
+    textOf(row.updated_at)
+  const editedAt = formatPayloadDateTime(editedAtRaw)
+  if (editedAt) {
+    remarks = remarks.map((remark) =>
+      remark.action === "edited" && !remark.at ? { ...remark, at: editedAt } : remark,
+    )
+  }
   const edited =
     !voided &&
     (!!idOf(row.edited_by) ||
@@ -234,12 +276,7 @@ function readPayment(item: unknown): PaymentRow | null {
     locationId: relationId(row.location, row.location_id),
     installmentId: relationId(row.installment, row.installment_id),
     voided: voided || undefined,
-    voidReason:
-      textOf(row.reasonToVoid) ||
-      textOf(row.reason_to_void) ||
-      textOf(row.void_reason) ||
-      textOf(row.reason) ||
-      undefined,
+    voidReason: voidReason || undefined,
     edited: edited || undefined,
     remarks,
   }
@@ -298,7 +335,7 @@ function paymentPayload(payment: ViewPayment, remarks: string): Record<string, u
           ? 0
           : payment.eligibleForRebate,
     generic_collector: payment.genericCollector,
-    remarks: remarks.trim(),
+    remarks: withRemarkDateTime(remarks.trim()),
   }
 }
 
@@ -403,6 +440,7 @@ export default function AdminPaymentsPage() {
   async function voidPayment(payment: ViewPayment, reason: string) {
     try {
       await apiService.voidPayment(payment.id, reason)
+      const stamped = splitRemarkDateTime(reason)
       const updated: PaymentRow = {
         ...payment,
         voided: true,
@@ -412,7 +450,7 @@ export default function AdminPaymentsPage() {
             id: `void-${Date.now()}`,
             action: "voided",
             by: "Admin",
-            at: remarkWhen.format(new Date()),
+            at: stamped.at || remarkWhen.format(new Date()),
             detail: reason,
           },
           ...payment.remarks,

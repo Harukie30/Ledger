@@ -5,7 +5,7 @@ import { useEffect, useState, type FormEvent } from "react"
 import { LoadingState } from "@/components/loading-state"
 import { ModalError } from "@/components/modal-error"
 import { ModalLogoWatermark } from "@/components/modal-logo-watermark"
-import type { ViewPayment } from "@/components/view-payment-modal"
+import { withRemarkDateTime, type ViewPayment } from "@/components/view-payment-modal"
 import {
   AlertDialog,
   AlertDialogContent,
@@ -64,7 +64,7 @@ export function VoidPaymentModal({
     setVoiding(true)
     setError("")
     try {
-      await onVoidedAction(payment, nextReason)
+      await onVoidedAction(payment, withRemarkDateTime(nextReason))
       onOpenChangeAction(false)
     } catch (voidError) {
       setError(toApiErrorMessage(voidError, "This payment could not be voided."))
